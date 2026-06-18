@@ -1,0 +1,35 @@
+# SparseUNet4D - base config (joint MOS + semantic on SemanticKITTI)
+dataset:
+  root: /path/to/semantickitti/dataset/sequences
+  semantic_yaml: /path/to/semantic-kitti.yaml   # official, for the 19-class map
+  train_sequences: [0, 1, 2, 3, 4, 5, 6, 7, 9, 10]
+  val_sequences: [8]
+  n_frames: 4
+  voxel_size: 0.1
+  point_range: 51.2
+
+# pose source: 'gt' for training; switch to 'drift' for the robustness eval
+pose:
+  mode: gt
+  rot_std_deg: 0.0      # per-frame increment for drift mode
+  trans_std_m: 0.0
+  seed: 0
+
+train:
+  batch_size: 2         # fits 5090; use 1 + grad-accum if memory tight
+  iters: 40000
+  lr: 1.0e-3
+  weight_decay: 1.0e-4
+  val_every: 1000
+
+loss:
+  motion_weight: 1.0
+  semantic_weight: 1.0
+  dice_weight: 1.0
+  moving_class_weight: 5.0   # w1 for the moving class in weighted CE
+  consistency_weight: 0.0    # >0 enables clean/perturbed consistency (Phase 2)
+
+# robustness eval sweep (used by scripts/eval_robustness.py)
+robustness:
+  rot_std_deg_sweep: [0.0, 0.25, 0.5, 1.0, 2.0]
+  trans_std_m_sweep: [0.0, 0.05, 0.1, 0.2, 0.4]
