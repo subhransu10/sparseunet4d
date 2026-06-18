@@ -1,7 +1,7 @@
 # SparseUNet4D - base config (joint MOS + semantic on SemanticKITTI)
 dataset:
-  root: /path/to/semantickitti/dataset/sequences
-  semantic_yaml: /path/to/semantic-kitti.yaml   # official, for the 19-class map
+  root: "/mnt/d/Subhransu workspace/Dataset/my_kitti_dataset/dataset/sequences"
+  semantic_yaml: "/mnt/d/Subhransu workspace/Dataset/my_kitti_dataset/dataset/sequences/semantic-kitti.yaml"   # official, for the 19-class map
   train_sequences: [0, 1, 2, 3, 4, 5, 6, 7, 9, 10]
   val_sequences: [8]
   n_frames: 4

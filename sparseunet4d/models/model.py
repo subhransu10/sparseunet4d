@@ -82,7 +82,7 @@ class EgoDecoupleBlock(nn.Module):
         app, valid = temporal_difference(x)               # ST, mask
         app_f = app.feats if backend() != "me" else app.F
         coords = x.coords if backend() != "me" else x.C
-        bidx = coords[:, 0].long()
+        bidx = coords[:, 0].long().to(app_f.device)
         B = int(bidx.max().item()) + 1
         ego_est = masked_mean_per_batch(app_f, bidx, valid, B)  # (B, C)
         ego = self.ego(ego_est)[bidx]                     # broadcast to voxels

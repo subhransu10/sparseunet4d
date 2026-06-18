@@ -112,6 +112,6 @@ if __name__ == "__main__":
         d["semantic_yaml"], p["mode"], p["rot_std_deg"], p["trans_std_m"], p["seed"],
         d["point_range"])
     train_loader = DataLoader(train_ds, batch_size=cfg["train"]["batch_size"],
-                              shuffle=True, collate_fn=me_collate, num_workers=4)
+                              shuffle=True, collate_fn=me_collate, num_workers=0)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     train(cfg, train_loader, device=device, max_iters=args.iters)

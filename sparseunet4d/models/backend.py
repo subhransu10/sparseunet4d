@@ -180,9 +180,9 @@ def cat_features(a, b):
 def masked_mean_per_batch(feats, batch_index, mask, B):
     """Mean of feats over rows where mask is True, grouped by batch."""
     m = mask.float().unsqueeze(1)
-    num = torch.zeros(B, feats.shape[1], dtype=feats.dtype)
+    num = torch.zeros(B, feats.shape[1], dtype=feats.dtype, device=feats.device)
     num.index_add_(0, batch_index, feats * m)
-    den = torch.zeros(B, 1, dtype=feats.dtype)
+    den = torch.zeros(B, 1, dtype=feats.dtype, device=feats.device)
     den.index_add_(0, batch_index, m)
     return num / den.clamp(min=1.0)
 
@@ -196,6 +196,7 @@ def temporal_difference(x):
     """
     if _BACKEND == "me":
         feats, coords = x.F, x.C
+        coords = coords.to(feats.device) 
     else:
         feats, coords = x.feats, x.coords
     spatial = coords[:, :4]                      # [b, x, y, z]
@@ -205,11 +206,11 @@ def temporal_difference(x):
     is_ref = (t == 0)
     is_ctx = ~is_ref
     ctx_mean = _scatter_mean(feats[is_ctx], inv[is_ctx], G) \
-        if is_ctx.any() else torch.zeros(G, feats.shape[1])
-    has_ctx = torch.zeros(G, dtype=torch.bool)
+        if is_ctx.any() else torch.zeros(G, feats.shape[1], device=feats.device)
+    has_ctx = torch.zeros(G, dtype=torch.bool, device=feats.device)
     has_ctx[inv[is_ctx]] = True
     diff = torch.zeros_like(feats)
-    valid = torch.zeros(feats.shape[0], dtype=torch.bool)
+    valid = torch.zeros(feats.shape[0], dtype=torch.bool, device=feats.device)
     ref_rows = torch.nonzero(is_ref, as_tuple=False).squeeze(1)
     ref_cells = inv[ref_rows]
     ok = has_ctx[ref_cells]
