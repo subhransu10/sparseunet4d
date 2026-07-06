@@ -26,9 +26,8 @@ loss:
   motion_weight: 1.0
   semantic_weight: 1.0
   dice_weight: 1.0
-  moving_class_weight: 8.0   # ONLY change: 5 -> 8. No Tversky.
-  tversky: false
-  consistency_weight: 0.0
+  moving_class_weight: 5.0   # w1 for the moving class in weighted CE
+  consistency_weight: 0.0    # >0 enables clean/perturbed consistency (Phase 2)
 
 # robustness eval sweep (used by scripts/eval_robustness.py)
 robustness:
@@ -36,5 +35,5 @@ robustness:
   trans_std_m_sweep: [0.0, 0.05, 0.1, 0.2, 0.4]
 
 model:
-  use_ego_decouple: true
+  use_ego_decouple: false
   use_se: true

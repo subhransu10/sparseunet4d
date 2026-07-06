@@ -1,0 +1,47 @@
+# Small model (the 0.60 baseline) + longer temporal window (8 frames).
+# Only n_frames changed vs the original good config. Clean poses for a fair
+# accuracy comparison to the 4-frame small model.
+dataset:
+  root: "/mnt/d/Subhransu workspace/Dataset/my_kitti_dataset/dataset/sequences"
+  semantic_yaml: "/mnt/d/Subhransu workspace/Dataset/my_kitti_dataset/dataset/sequences/semantic-kitti.yaml"
+  train_sequences: [0, 1, 2, 3, 4, 5, 6, 7, 9, 10]
+  val_sequences: [8]
+  n_frames: 8              # <-- the change (was 4)
+  voxel_size: 0.1
+  point_range: 51.2
+  num_semantic: 20
+
+pose:
+  mode: gt                 # clean poses: measure pure accuracy effect of window
+  rot_std_deg: 0.0
+  trans_std_m: 0.0
+  seed: 0
+
+model:
+  base: 32                 # back to the small model that hit 0.60
+  n_stages: 2
+  use_se: true
+  use_ego_decouple: false
+
+train:
+  batch_size: 2
+  lr: 1.0e-3               # the LR that worked for the small model
+  accum_steps: 1
+  warmup_iters: 500
+  lr_schedule: cosine
+  iters: 40000
+  val_every: 1000
+  num_workers: 8
+  patience: 8
+  weight_decay: 1.0e-4
+
+loss:
+  motion_weight: 1.0
+  semantic_weight: 1.0
+  dice_weight: 1.0
+  moving_class_weight: 5.0
+  consistency_weight: 0.0
+
+robustness:
+  rot_std_deg_sweep: [0.0, 0.25, 0.5, 1.0, 2.0]
+  trans_std_m_sweep: [0.0, 0.05, 0.1, 0.2, 0.4]

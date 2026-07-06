@@ -49,7 +49,11 @@ def total_loss(out, motion_labels, semantic_labels, cfg,
                          device=out["motion_logits"].device)
     l_mot = weighted_ce(out["motion_logits"], motion_labels, w)
     l_sem = weighted_ce(out["semantic_logits"], semantic_labels)
-    l_dice = dice_moving(out["motion_logits"], motion_labels)
+    if cfg.get("tversky", False):
+        l_dice = tversky_moving(out["motion_logits"], motion_labels,
+                                cfg.get("tversky_alpha", 0.3), cfg.get("tversky_beta", 0.7))
+    else:
+        l_dice = dice_moving(out["motion_logits"], motion_labels)
     loss = (cfg.get("motion_weight", 1.0) * l_mot
             + cfg.get("semantic_weight", 1.0) * l_sem
             + cfg.get("dice_weight", 1.0) * l_dice)
@@ -61,3 +65,13 @@ def total_loss(out, motion_labels, semantic_labels, cfg,
         loss = loss + cfg["consistency_weight"] * l_con
         parts["consistency"] = l_con.item()
     return loss, parts
+
+def tversky_moving(logits, labels, alpha=0.3, beta=0.7, eps=1.0):
+    """Tversky on moving class (idx 1), ref voxels only. beta>alpha favours RECALL."""
+    mask = labels != IGNORE_INDEX
+    if mask.sum() == 0:
+        return logits.sum() * 0.0
+    p = torch.softmax(logits[mask], dim=1)[:, 1]
+    g = (labels[mask] == 1).float()
+    tp = (p * g).sum(); fp = (p * (1 - g)).sum(); fn = ((1 - p) * g).sum()
+    return 1.0 - (tp + eps) / (tp + alpha * fp + beta * fn + eps)

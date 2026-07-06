@@ -48,7 +48,7 @@ def main():
         in_ch=1, num_semantic=num_sem,
         use_se=cfg["model"].get("use_se", True),
         use_ego_decouple=cfg["model"].get("use_ego_decouple", True)).to(device)
-    model.load_state_dict(torch.load(args.ckpt, map_location=device))
+    ck = torch.load(args.ckpt, map_location=device); model.load_state_dict(ck["model"] if "model" in ck else ck)
     model.eval()
 
     rot_sweep = cfg["robustness"]["rot_std_deg_sweep"]
