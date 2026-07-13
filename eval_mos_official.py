@@ -57,12 +57,16 @@ def main():
     from sparseunet4d.datasets.semantickitti import _read_label
 
     ds = SemanticKITTI4D(d["root"], d["val_sequences"], d["n_frames"],
-        d["voxel_size"], d["semantic_yaml"], "gt", 0.0, 0.0, p["seed"], d["point_range"])
+        d["voxel_size"], d["semantic_yaml"], "gt", 0.0, 0.0, p["seed"], d["point_range"],
+        residual_feats=d.get("residual_feats", True), res_clip=d.get("res_clip", 3.0))
     loader = DataLoader(ds, batch_size=cfg["train"]["batch_size"], shuffle=False,
                         collate_fn=me_collate, num_workers=4)
 
-    model = SparseUNet4D(1, d.get("num_semantic", 20), base=m.get("base", 32),
-         use_se=m.get("use_se", True),
+    n_frames = d.get("n_frames", 4)
+    residual_feats = d.get("residual_feats", True)
+    in_ch = 1 + (n_frames - 1) if residual_feats else 1
+    model = SparseUNet4D(in_ch, d.get("num_semantic", 20), base=m.get("base", 32),
+        n_stages=m.get("n_stages", 2), use_se=m.get("use_se", True),
         use_ego_decouple=m.get("use_ego_decouple", False)).to(dev).eval()
     ck = torch.load(args.ckpt, map_location=dev)
     model.load_state_dict(ck["model"] if "model" in ck else ck)

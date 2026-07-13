@@ -1,0 +1,112 @@
+/home/suba/MinkowskiEngine/MinkowskiEngine/__init__.py:36: UserWarning: The environment variable `OMP_NUM_THREADS` not set. MinkowskiEngine will automatically set `OMP_NUM_THREADS=16`. If you want to set `OMP_NUM_THREADS` manually, please export it on the command line before running a python script. e.g. `export OMP_NUM_THREADS=12; python your_program.py`. It is recommended to set it below 24.
+  warnings.warn(
+[iter 0] lr=2.00e-06 loss=5.149 motion=0.697 semantic=2.990 dice=1.000 offset=0.462 | data 2.1s compute 2.0s
+[iter 50] lr=1.02e-04 loss=4.541 motion=0.379 semantic=2.692 dice=0.994 offset=0.476 | data 0.0s compute 32.9s
+[iter 100] lr=2.02e-04 loss=2.957 motion=0.065 semantic=1.352 dice=1.000 offset=0.540 | data 0.0s compute 32.4s
+[iter 150] lr=3.02e-04 loss=2.683 motion=0.022 semantic=1.036 dice=0.986 offset=0.639 | data 0.0s compute 32.7s
+[iter 200] lr=4.02e-04 loss=2.546 motion=0.064 semantic=1.477 dice=0.470 offset=0.536 | data 0.0s compute 33.1s
+[iter 250] lr=5.02e-04 loss=2.646 motion=0.009 semantic=1.061 dice=1.000 offset=0.576 | data 0.0s compute 32.3s
+[iter 300] lr=6.02e-04 loss=2.618 motion=0.036 semantic=1.101 dice=1.000 offset=0.481 | data 0.0s compute 32.0s
+[iter 350] lr=7.02e-04 loss=1.703 motion=0.007 semantic=0.978 dice=0.261 offset=0.456 | data 0.0s compute 32.2s
+[iter 400] lr=8.02e-04 loss=2.434 motion=0.092 semantic=0.868 dice=0.996 offset=0.478 | data 0.0s compute 32.0s
+[iter 450] lr=9.02e-04 loss=2.483 motion=0.001 semantic=0.960 dice=1.000 offset=0.522 | data 0.0s compute 32.8s
+[iter 500] lr=1.00e-03 loss=2.586 motion=0.029 semantic=1.155 dice=0.939 offset=0.464 | data 0.0s compute 32.5s
+[iter 550] lr=1.00e-03 loss=2.451 motion=0.000 semantic=0.971 dice=1.000 offset=0.480 | data 0.0s compute 31.8s
+[iter 600] lr=9.99e-04 loss=2.674 motion=0.000 semantic=1.153 dice=1.000 offset=0.521 | data 0.0s compute 31.5s
+[iter 650] lr=9.97e-04 loss=1.863 motion=0.008 semantic=0.647 dice=0.752 offset=0.456 | data 0.0s compute 32.2s
+[iter 700] lr=9.95e-04 loss=2.501 motion=0.000 semantic=0.946 dice=1.000 offset=0.555 | data 0.0s compute 31.6s
+[iter 750] lr=9.92e-04 loss=2.249 motion=0.000 semantic=0.695 dice=1.000 offset=0.554 | data 0.0s compute 32.7s
+[iter 800] lr=9.89e-04 loss=2.234 motion=0.000 semantic=0.737 dice=1.000 offset=0.496 | data 0.0s compute 32.5s
+[iter 850] lr=9.85e-04 loss=2.244 motion=0.002 semantic=0.763 dice=1.000 offset=0.479 | data 0.0s compute 32.8s
+[iter 900] lr=9.81e-04 loss=1.609 motion=0.029 semantic=0.847 dice=0.195 offset=0.537 | data 0.0s compute 32.2s
+[iter 950] lr=9.76e-04 loss=1.565 motion=0.033 semantic=0.840 dice=0.265 offset=0.428 | data 0.0s compute 32.5s
+  [val @ 1000] moving_iou=0.2983 P=0.540 R=0.400 semantic_miou=0.1999
+  [val @ 1000] new best -> best.pt (0.2983)
+[iter 1000] lr=9.70e-04 loss=1.774 motion=0.124 semantic=0.977 dice=0.243 offset=0.430 | data 0.0s compute 31.5s
+[iter 1050] lr=9.64e-04 loss=1.355 motion=0.011 semantic=0.722 dice=0.091 offset=0.531 | data 0.0s compute 33.2s
+[iter 1100] lr=9.57e-04 loss=1.742 motion=0.009 semantic=1.054 dice=0.150 offset=0.529 | data 0.0s compute 32.9s
+[iter 1150] lr=9.49e-04 loss=1.351 motion=0.029 semantic=0.674 dice=0.125 offset=0.523 | data 0.0s compute 32.7s
+[iter 1200] lr=9.41e-04 loss=2.447 motion=0.000 semantic=0.902 dice=1.000 offset=0.545 | data 0.0s compute 31.9s
+[iter 1250] lr=9.33e-04 loss=2.164 motion=0.011 semantic=0.686 dice=1.000 offset=0.467 | data 0.0s compute 32.8s
+[iter 1300] lr=9.24e-04 loss=1.453 motion=0.016 semantic=0.678 dice=0.233 offset=0.526 | data 0.0s compute 32.5s
+[iter 1350] lr=9.15e-04 loss=2.219 motion=0.000 semantic=0.697 dice=1.000 offset=0.521 | data 0.0s compute 33.3s
+[iter 1400] lr=9.05e-04 loss=1.079 motion=0.003 semantic=0.583 dice=0.027 offset=0.466 | data 0.0s compute 32.2s
+[iter 1450] lr=8.94e-04 loss=2.388 motion=0.001 semantic=0.942 dice=1.000 offset=0.445 | data 0.0s compute 32.5s
+[iter 1500] lr=8.83e-04 loss=1.484 motion=0.007 semantic=0.634 dice=0.363 offset=0.481 | data 0.0s compute 32.1s
+[iter 1550] lr=8.72e-04 loss=2.512 motion=0.010 semantic=1.075 dice=1.000 offset=0.426 | data 0.0s compute 33.4s
+[iter 1600] lr=8.60e-04 loss=2.115 motion=0.000 semantic=0.586 dice=1.000 offset=0.529 | data 0.0s compute 32.3s
+[iter 1650] lr=8.47e-04 loss=1.989 motion=0.002 semantic=0.554 dice=1.000 offset=0.433 | data 0.0s compute 32.9s
+[iter 1700] lr=8.35e-04 loss=2.235 motion=0.000 semantic=0.707 dice=1.000 offset=0.527 | data 0.0s compute 32.4s
+[iter 1750] lr=8.21e-04 loss=2.162 motion=0.000 semantic=0.655 dice=1.000 offset=0.506 | data 0.0s compute 32.1s
+[iter 1800] lr=8.08e-04 loss=1.426 motion=0.010 semantic=0.823 dice=0.120 offset=0.472 | data 0.0s compute 31.7s
+[iter 1850] lr=7.94e-04 loss=2.157 motion=0.000 semantic=0.599 dice=1.000 offset=0.558 | data 0.0s compute 31.7s
+[iter 1900] lr=7.80e-04 loss=2.428 motion=0.000 semantic=0.810 dice=1.000 offset=0.618 | data 0.0s compute 32.8s
+[iter 1950] lr=7.65e-04 loss=2.495 motion=0.004 semantic=0.905 dice=0.999 offset=0.587 | data 0.0s compute 33.3s
+  [val @ 2000] moving_iou=0.4170 P=0.608 R=0.571 semantic_miou=0.2269
+  [val @ 2000] new best -> best.pt (0.4170)
+[iter 2000] lr=7.50e-04 loss=1.398 motion=0.006 semantic=0.664 dice=0.242 offset=0.485 | data 0.0s compute 31.5s
+[iter 2050] lr=7.35e-04 loss=1.295 motion=0.019 semantic=0.614 dice=0.065 offset=0.598 | data 0.0s compute 33.1s
+[iter 2100] lr=7.19e-04 loss=2.342 motion=0.000 semantic=0.799 dice=1.000 offset=0.543 | data 0.0s compute 32.9s
+[iter 2150] lr=7.03e-04 loss=2.210 motion=0.008 semantic=0.710 dice=1.000 offset=0.492 | data 0.0s compute 32.6s
+[iter 2200] lr=6.87e-04 loss=2.008 motion=0.000 semantic=0.522 dice=1.000 offset=0.486 | data 0.0s compute 32.2s
+[iter 2250] lr=6.71e-04 loss=2.035 motion=0.000 semantic=0.584 dice=1.000 offset=0.450 | data 0.0s compute 33.0s
+[iter 2300] lr=6.55e-04 loss=2.340 motion=0.001 semantic=0.793 dice=1.000 offset=0.546 | data 0.0s compute 32.8s
+[iter 2350] lr=6.38e-04 loss=1.150 motion=0.000 semantic=0.617 dice=0.022 offset=0.511 | data 0.0s compute 31.6s
+[iter 2400] lr=6.21e-04 loss=2.117 motion=0.000 semantic=0.606 dice=1.000 offset=0.511 | data 0.0s compute 32.8s
+[iter 2450] lr=6.04e-04 loss=1.142 motion=0.005 semantic=0.499 dice=0.142 offset=0.496 | data 0.0s compute 31.0s
+[iter 2500] lr=5.87e-04 loss=1.194 motion=0.018 semantic=0.607 dice=0.029 offset=0.541 | data 0.0s compute 31.0s
+[iter 2550] lr=5.70e-04 loss=2.108 motion=0.000 semantic=0.544 dice=1.000 offset=0.564 | data 0.0s compute 32.8s
+[iter 2600] lr=5.52e-04 loss=1.295 motion=0.001 semantic=0.608 dice=0.193 offset=0.493 | data 0.0s compute 32.7s
+[iter 2650] lr=5.35e-04 loss=1.145 motion=0.025 semantic=0.629 dice=0.055 offset=0.436 | data 0.0s compute 32.2s
+[iter 2700] lr=5.17e-04 loss=1.194 motion=0.011 semantic=0.625 dice=0.062 offset=0.495 | data 0.0s compute 32.5s
+[iter 2750] lr=5.00e-04 loss=1.940 motion=0.000 semantic=0.473 dice=1.000 offset=0.468 | data 0.0s compute 31.9s
+[iter 2800] lr=4.83e-04 loss=1.172 motion=0.016 semantic=0.682 dice=0.054 offset=0.420 | data 0.0s compute 31.0s
+[iter 2850] lr=4.65e-04 loss=1.165 motion=0.011 semantic=0.557 dice=0.130 offset=0.466 | data 0.0s compute 32.4s
+[iter 2900] lr=4.48e-04 loss=1.644 motion=0.217 semantic=0.730 dice=0.171 offset=0.526 | data 0.0s compute 33.3s
+[iter 2950] lr=4.30e-04 loss=1.807 motion=0.000 semantic=0.300 dice=1.000 offset=0.507 | data 0.0s compute 32.7s
+  [val @ 3000] moving_iou=0.4365 P=0.670 R=0.556 semantic_miou=0.2488
+  [val @ 3000] new best -> best.pt (0.4365)
+[iter 3000] lr=4.13e-04 loss=1.097 motion=0.003 semantic=0.583 dice=0.049 offset=0.462 | data 0.0s compute 32.6s
+[iter 3050] lr=3.96e-04 loss=2.058 motion=0.064 semantic=0.735 dice=0.446 offset=0.813 | data 0.0s compute 31.8s
+[iter 3100] lr=3.79e-04 loss=2.074 motion=0.000 semantic=0.559 dice=1.000 offset=0.514 | data 0.0s compute 32.4s
+[iter 3150] lr=3.62e-04 loss=1.114 motion=0.006 semantic=0.602 dice=0.042 offset=0.464 | data 0.0s compute 31.6s
+[iter 3200] lr=3.45e-04 loss=1.331 motion=0.036 semantic=0.555 dice=0.303 offset=0.437 | data 0.0s compute 33.2s
+[iter 3250] lr=3.29e-04 loss=1.075 motion=0.006 semantic=0.551 dice=0.081 offset=0.437 | data 0.0s compute 32.2s
+[iter 3300] lr=3.13e-04 loss=1.549 motion=0.017 semantic=0.705 dice=0.194 offset=0.633 | data 0.0s compute 32.5s
+[iter 3350] lr=2.97e-04 loss=1.890 motion=0.000 semantic=0.432 dice=1.000 offset=0.458 | data 0.0s compute 32.0s
+[iter 3400] lr=2.81e-04 loss=2.166 motion=0.001 semantic=0.523 dice=1.000 offset=0.642 | data 0.0s compute 32.5s
+[iter 3450] lr=2.65e-04 loss=1.992 motion=0.000 semantic=0.552 dice=1.000 offset=0.440 | data 0.0s compute 32.1s
+[iter 3500] lr=2.50e-04 loss=1.341 motion=0.013 semantic=0.612 dice=0.269 offset=0.448 | data 0.0s compute 32.2s
+[iter 3550] lr=2.35e-04 loss=2.066 motion=0.009 semantic=0.674 dice=0.995 offset=0.387 | data 0.0s compute 31.9s
+[iter 3600] lr=2.20e-04 loss=2.093 motion=0.002 semantic=0.620 dice=1.000 offset=0.470 | data 0.0s compute 32.0s
+[iter 3650] lr=2.06e-04 loss=0.955 motion=0.009 semantic=0.369 dice=0.145 offset=0.434 | data 0.0s compute 32.3s
+[iter 3700] lr=1.92e-04 loss=1.633 motion=0.005 semantic=0.733 dice=0.258 offset=0.638 | data 0.0s compute 32.6s
+[iter 3750] lr=1.79e-04 loss=1.197 motion=0.008 semantic=0.499 dice=0.162 offset=0.528 | data 0.0s compute 32.0s
+[iter 3800] lr=1.65e-04 loss=2.191 motion=0.006 semantic=0.726 dice=1.000 offset=0.459 | data 0.0s compute 31.5s
+[iter 3850] lr=1.53e-04 loss=1.167 motion=0.015 semantic=0.657 dice=0.112 offset=0.383 | data 0.0s compute 32.4s
+[iter 3900] lr=1.40e-04 loss=1.235 motion=0.016 semantic=0.658 dice=0.032 offset=0.530 | data 0.0s compute 32.8s
+[iter 3950] lr=1.28e-04 loss=1.954 motion=0.000 semantic=0.488 dice=1.000 offset=0.467 | data 0.0s compute 32.7s
+  [val @ 4000] moving_iou=0.4959 P=0.767 R=0.584 semantic_miou=0.2681
+  [val @ 4000] new best -> best.pt (0.4959)
+[iter 4000] lr=1.17e-04 loss=1.895 motion=0.000 semantic=0.464 dice=1.000 offset=0.430 | data 0.0s compute 32.6s
+[iter 4050] lr=1.06e-04 loss=1.872 motion=0.000 semantic=0.429 dice=1.000 offset=0.442 | data 0.0s compute 32.9s
+[iter 4100] lr=9.55e-05 loss=2.096 motion=0.000 semantic=0.590 dice=1.000 offset=0.505 | data 0.0s compute 31.3s
+[iter 4150] lr=8.55e-05 loss=1.998 motion=0.000 semantic=0.556 dice=1.000 offset=0.442 | data 0.0s compute 32.6s
+[iter 4200] lr=7.60e-05 loss=1.939 motion=0.000 semantic=0.470 dice=1.000 offset=0.469 | data 0.0s compute 32.5s
+[iter 4250] lr=6.70e-05 loss=1.072 motion=0.003 semantic=0.580 dice=0.040 offset=0.450 | data 0.0s compute 33.5s
+[iter 4300] lr=5.85e-05 loss=1.077 motion=0.000 semantic=0.541 dice=0.033 offset=0.503 | data 0.0s compute 32.2s
+[iter 4350] lr=5.06e-05 loss=1.068 motion=0.003 semantic=0.497 dice=0.106 offset=0.462 | data 0.0s compute 30.9s
+[iter 4400] lr=4.32e-05 loss=1.934 motion=0.002 semantic=0.452 dice=1.000 offset=0.480 | data 0.0s compute 32.3s
+[iter 4450] lr=3.64e-05 loss=2.000 motion=0.000 semantic=0.555 dice=1.000 offset=0.445 | data 0.0s compute 32.7s
+[iter 4500] lr=3.02e-05 loss=1.655 motion=0.015 semantic=0.518 dice=0.613 offset=0.510 | data 0.0s compute 32.3s
+[iter 4550] lr=2.45e-05 loss=1.242 motion=0.001 semantic=0.677 dice=0.050 offset=0.514 | data 0.0s compute 32.3s
+[iter 4600] lr=1.94e-05 loss=0.931 motion=0.000 semantic=0.355 dice=0.077 offset=0.500 | data 0.0s compute 31.8s
+[iter 4650] lr=1.49e-05 loss=1.875 motion=0.000 semantic=0.472 dice=1.000 offset=0.402 | data 0.0s compute 32.4s
+[iter 4700] lr=1.09e-05 loss=1.254 motion=0.010 semantic=0.777 dice=0.049 offset=0.418 | data 0.0s compute 31.9s
+[iter 4750] lr=7.60e-06 loss=1.016 motion=0.006 semantic=0.504 dice=0.037 offset=0.469 | data 0.0s compute 32.6s
+[iter 4800] lr=4.87e-06 loss=1.826 motion=0.000 semantic=0.357 dice=1.000 offset=0.468 | data 0.0s compute 32.5s
+[iter 4850] lr=2.74e-06 loss=1.781 motion=0.000 semantic=0.427 dice=1.000 offset=0.354 | data 0.0s compute 32.5s
+[iter 4900] lr=1.22e-06 loss=1.874 motion=0.000 semantic=0.435 dice=1.000 offset=0.439 | data 0.0s compute 32.8s
+[iter 4950] lr=3.05e-07 loss=0.913 motion=0.001 semantic=0.428 dice=0.023 offset=0.462 | data 0.0s compute 31.9s
+  [val @ 5000] moving_iou=0.4904 P=0.731 R=0.598 semantic_miou=0.2743
+done @ iter 5000. best moving_iou=0.4959  ckpts in /home/suba/sparseunet4d/runs/offset_v2_5k

@@ -5,6 +5,8 @@ dataset:
   train_sequences: [0, 1, 2, 3, 4, 5, 6, 7, 9, 10]
   val_sequences: [8]
   n_frames: 4
+  residual_feats: true
+  res_clip: 3.0
   voxel_size: 0.1
   point_range: 51.2
 

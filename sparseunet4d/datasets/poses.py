@@ -108,20 +108,10 @@ class DriftyPoseProvider:
     def __init__(self, base: GTPoseProvider, rot_std_deg: float,
                  trans_std_m: float, seed: int = 0):
         self.base = base
-        rng = np.random.default_rng(seed)
-        F = len(base)
-        rot_std = np.deg2rad(rot_std_deg)
-        drift = np.tile(np.eye(4), (F, 1, 1))
-        acc = np.eye(4)
-        for i in range(1, F):
-            xi = np.concatenate([
-                rng.normal(0.0, rot_std, 3),
-                rng.normal(0.0, trans_std_m, 3),
-            ])
-            acc = acc @ _se3_exp(xi)
-            drift[i] = acc
-        # corrupted world poses: apply accumulated drift on top of GT
-        self.poses = np.einsum("fij,fjk->fik", drift, base.poses)
+        self.seed = int(seed)
+        self.rot_std = np.deg2rad(rot_std_deg)   # radians, per-frame-step
+        self.trans_std = float(trans_std_m)      # metres, per-frame-step
+        self.poses = base.poses                  # unused; relative() is the model
 
     def __len__(self):
         return len(self.poses)
@@ -129,8 +119,15 @@ class DriftyPoseProvider:
     def pose(self, frame_idx: int) -> np.ndarray:
         return self.poses[frame_idx]
 
-    def relative(self, src_idx: int, ref_idx: int) -> np.ndarray:
-        return np.linalg.inv(self.poses[ref_idx]) @ self.poses[src_idx]
+    def relative(self, src_idx, ref_idx):
+        T = self.base.relative(src_idx, ref_idx)          # true relative
+        k = abs(ref_idx - src_idx)                        # frames apart
+        rng = np.random.default_rng((self.seed, ref_idx, src_idx))
+        xi = np.concatenate([
+            rng.normal(0.0, self.rot_std * np.sqrt(k), 3),   # walk over k steps
+            rng.normal(0.0, self.trans_std * np.sqrt(k), 3),
+        ])
+        return T @ _se3_exp(xi)          # error in the SOURCE sensor frame
 
 
 def build_pose_provider(seq_dir: str, mode: str = "gt",

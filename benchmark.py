@@ -52,7 +52,7 @@ def main():
     num_sem = cfg["dataset"].get("num_semantic", 20)
 
     model = SparseUNet4D(
-        in_ch=1, num_semantic=num_sem,
+        in_ch=4, num_semantic=num_sem,
         use_se=cfg["model"].get("use_se", True),
         use_ego_decouple=cfg["model"].get("use_ego_decouple", True)).to(device).eval()
     if args.ckpt:
