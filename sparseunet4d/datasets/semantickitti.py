@@ -78,7 +78,8 @@ class SemanticKITTI4D(Dataset):
                  semantic_yaml=None, pose_mode="gt",
                  rot_std_deg=0.0, trans_std_m=0.0, pose_seed=0,
                  point_range=51.2, max_points=None,
-                 residual_feats=True, res_clip=3.0):
+                 residual_feats=True, res_clip=3.0,
+                 return_point_map=False):
         """
         root:        .../sequences
         sequences:   list of int (e.g. list(range(11)) for train/val)
@@ -98,6 +99,7 @@ class SemanticKITTI4D(Dataset):
         self.max_points = max_points
         self.residual_feats = residual_feats
         self.res_clip = res_clip
+        self.return_point_map = return_point_map
 
         self.lut = None
         if semantic_yaml is not None:
@@ -207,15 +209,33 @@ class SemanticKITTI4D(Dataset):
         qcoords[:, :3] = np.floor(coords[:, :3] / self.voxel_size)
         qcoords = qcoords.astype(np.int32)
 
-        # collapse duplicate (x,y,z,t) voxels -> keep first; aggregate labels by max
-        _, uniq = np.unique(qcoords, axis=0, return_index=True)
-        uniq.sort()
-        return {
-            "coords": qcoords[uniq],          # (M, 4) int32  (x, y, z, t)
-            "feats": feats[uniq],             # (M, 1+K) float32
-            "motion": mot[uniq],              # (M,)  int64
-            "semantic": sem[uniq],            # (M,)  int64
-            "offset": off[uniq].astype(np.float32),   # (M, 3) float32
-            "offset_mask": omask[uniq],       # (M,)  bool
+        # collapse duplicate (x,y,z,t) voxels. Each voxel takes ALL its labels
+        # from a single representative point chosen by motion priority
+        # (moving > static > ignore), so a voxel is MOVING whenever ANY of its
+        # points is moving. Previously we kept the first point and silently
+        # dropped moving labels at mixed voxels -> a bias against the moving
+        # class in both the GT and the training signal.
+        uniq_coords, inv = np.unique(qcoords, axis=0, return_inverse=True)
+        inv = inv.reshape(-1)
+        G = uniq_coords.shape[0]
+        rep = np.empty(G, dtype=np.int64)
+        order = np.argsort(mot, kind="stable")   # ascending: ignore(-1),static(0),moving(1)
+        rep[inv[order]] = order                  # last write per voxel = max-priority point
+        out = {
+            "coords": uniq_coords,                    # (M, 4) int32  (x, y, z, t)
+            "feats": feats[rep],                      # (M, 1+K) float32
+            "motion": mot[rep],                       # (M,)  int64
+            "semantic": sem[rep],                     # (M,)  int64
+            "offset": off[rep].astype(np.float32),    # (M, 3) float32
+            "offset_mask": omask[rep],                # (M,)  bool
             "meta": (seq, ref),
         }
+        if self.return_point_map:
+            # full-resolution reference-frame labels + the voxel row each point
+            # maps to, so eval can propagate voxel predictions back to EVERY
+            # point (official point-level MOS protocol) rather than scoring the
+            # deduplicated voxels. Reference frame is block 0 of the stack.
+            n_ref = len(frame_xyz[0])
+            out["ref_point_motion"] = mot[:n_ref].astype(np.int64)
+            out["ref_point_voxel"] = inv[:n_ref].astype(np.int64)
+        return out

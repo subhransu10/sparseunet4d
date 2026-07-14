@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from sparseunet4d.models.backend import ST, backend
 from sparseunet4d.models.model import SparseUNet4D
 from sparseunet4d.models.losses import total_loss
-from sparseunet4d.utils.metrics import IoUMeter
+from sparseunet4d.utils.metrics import IoUMeter, MovingThresholdMeter
 
 
 def to_st(batch, device):
@@ -46,21 +46,25 @@ def run_batch(model, batch, cfg, device, drift_batch=None):
 
 
 def validate(model, loader, cfg, device, num_sem):
-    model.eval(); mos, sem = IoUMeter(2), IoUMeter(num_sem)
+    model.eval(); mos, sem = MovingThresholdMeter(), IoUMeter(num_sem)
     with torch.no_grad():
         for batch in loader:
             out, _, _ = run_batch(model, batch, cfg, device)
             mos.update(out["motion_logits"], batch["motion"].to(device))
             sem.update(out["semantic_logits"], batch["semantic"].to(device))
     model.train()
-    prec, rec = mos.moving_pr()
-    return {"moving_iou": mos.moving_iou(), "semantic_miou": sem.miou(),
-            "moving_prec": prec, "moving_rec": rec}
+    b = mos.best()
+    # 'moving_iou' is now the threshold-optimal IoU (used for model selection);
+    # 'moving_iou_argmax' keeps the old argmax@0.5 number for comparison.
+    return {"moving_iou": b["iou"], "moving_iou_argmax": b["iou_argmax"],
+            "moving_threshold": b["threshold"], "semantic_miou": sem.miou(),
+            "moving_prec": b["prec"], "moving_rec": b["rec"]}
 
 
-def save_ckpt(path, model, opt, cfg, it, best_iou, no_improve):
+def save_ckpt(path, model, opt, cfg, it, best_iou, no_improve, best_threshold=0.5):
     torch.save({"model": model.state_dict(), "optimizer": opt.state_dict(),
                 "iter": it, "best_moving_iou": best_iou,
+                "best_threshold": best_threshold,
                 "no_improve": no_improve, "config": cfg}, path)
 
 
@@ -97,26 +101,30 @@ def train(cfg, train_loader, val_loader=None, device="cpu", drift_loader=None,
     schedule = cfg["train"].get("lr_schedule", "cosine")
     drift_iter = iter(drift_loader) if drift_loader is not None else None
 
-    it, best_iou, no_improve = 0, -1.0, 0
+    it, best_iou, no_improve, best_thr = 0, -1.0, 0, 0.5
     if resume and os.path.exists(resume):
         ck = torch.load(resume, map_location=device)
         model.load_state_dict(ck["model"]); opt.load_state_dict(ck["optimizer"])
         it = ck.get("iter", 0); best_iou = ck.get("best_moving_iou", -1.0)
-        no_improve = ck.get("no_improve", 0)
+        no_improve = ck.get("no_improve", 0); best_thr = ck.get("best_threshold", 0.5)
         print(f"resumed from {resume} @ iter {it} (best={best_iou:.4f})")
 
     def checkpoint_and_eval(it):
-        nonlocal best_iou, no_improve
-        save_ckpt(os.path.join(save_dir, "last.pt"), model, opt, cfg, it, best_iou, no_improve)
+        nonlocal best_iou, no_improve, best_thr
+        save_ckpt(os.path.join(save_dir, "last.pt"), model, opt, cfg, it, best_iou,
+                  no_improve, best_thr)
         if val_loader is None: return False
         v = validate(model, val_loader, cfg, device, num_sem)
-        print(f"  [val @ {it}] moving_iou={v['moving_iou']:.4f} "
+        print(f"  [val @ {it}] moving_iou={v['moving_iou']:.4f}@th{v['moving_threshold']:.2f} "
+              f"(argmax {v['moving_iou_argmax']:.4f}) "
               f"P={v['moving_prec']:.3f} R={v['moving_rec']:.3f} "
               f"semantic_miou={v['semantic_miou']:.4f}", flush=True)
         if v["moving_iou"] > best_iou:
-            best_iou = v["moving_iou"]; no_improve = 0
-            save_ckpt(os.path.join(save_dir, "best.pt"), model, opt, cfg, it, best_iou, no_improve)
-            print(f"  [val @ {it}] new best -> best.pt ({best_iou:.4f})", flush=True)
+            best_iou = v["moving_iou"]; no_improve = 0; best_thr = v["moving_threshold"]
+            save_ckpt(os.path.join(save_dir, "best.pt"), model, opt, cfg, it, best_iou,
+                      no_improve, best_thr)
+            print(f"  [val @ {it}] new best -> best.pt ({best_iou:.4f} @ th {best_thr:.2f})",
+                  flush=True)
         else:
             no_improve += 1
         if patience and no_improve >= patience:

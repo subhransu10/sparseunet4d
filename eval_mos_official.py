@@ -43,6 +43,14 @@ def main():
     ap.add_argument("--ckpt", required=True)
     ap.add_argument("--mos-yaml", required=True,
                     help="official semantic-kitti-mos.yaml")
+    ap.add_argument("--point-level", action="store_true",
+                    help="propagate each voxel prediction back to ALL of its "
+                         "reference points and score point-level (official MOS "
+                         "protocol). Default scores the deduplicated voxels.")
+    ap.add_argument("--threshold", type=float, default=0.5,
+                    help="moving-class softmax cutoff (use the threshold saved "
+                         "in the checkpoint / found by eval_threshold_sweep.py; "
+                         "default 0.5 == argmax).")
     args = ap.parse_args()
     with open(args.config) as f:
         cfg = yaml.safe_load(f); cfg.setdefault("model", {})
@@ -58,7 +66,8 @@ def main():
 
     ds = SemanticKITTI4D(d["root"], d["val_sequences"], d["n_frames"],
         d["voxel_size"], d["semantic_yaml"], "gt", 0.0, 0.0, p["seed"], d["point_range"],
-        residual_feats=d.get("residual_feats", True), res_clip=d.get("res_clip", 3.0))
+        residual_feats=d.get("residual_feats", True), res_clip=d.get("res_clip", 3.0),
+        return_point_map=args.point_level)
     loader = DataLoader(ds, batch_size=cfg["train"]["batch_size"], shuffle=False,
                         collate_fn=me_collate, num_workers=4)
 
@@ -74,7 +83,6 @@ def main():
     # NOTE: this uses the dataset's own motion labels (already moving=1). If your
     # dataset motion mapping == official MOS moving set (252-259 -> moving), the
     # numbers are directly comparable. We verify overlap below.
-    inter = union = 0
     tp = fp = fn = 0
     with torch.no_grad():
         for batch in loader:
@@ -86,16 +94,26 @@ def main():
                 from sparseunet4d.models.backend import ST
                 x = ST(feats, coords)
             out = model(x)
-            pred = out["motion_logits"].argmax(1).cpu().numpy()
-            gt = batch["motion"].numpy()
-            mask = gt != -1
-            pr, g = pred[mask], gt[mask]
-            tp += int(((pr == 1) & (g == 1)).sum())
-            fp += int(((pr == 1) & (g == 0)).sum())
-            fn += int(((pr == 0) & (g == 1)).sum())
+            prob = torch.softmax(out["motion_logits"], 1)[:, 1].cpu().numpy()
+            if args.point_level:
+                # each reference point inherits its voxel's moving probability
+                rpv = batch["ref_point_voxel"].numpy()
+                g = batch["ref_point_motion"].numpy()
+                pm = prob[rpv]
+            else:
+                g = batch["motion"].numpy()
+                pm = prob
+            mask = g != -1
+            pr = (pm[mask] >= args.threshold).astype(np.int64)
+            gm = g[mask]
+            tp += int(((pr == 1) & (gm == 1)).sum())
+            fp += int(((pr == 1) & (gm == 0)).sum())
+            fn += int(((pr == 0) & (gm == 1)).sum())
     iou = tp / max(tp + fp + fn, 1)
     prec = tp / max(tp + fp, 1); rec = tp / max(tp + fn, 1)
-    print(f"\n=== SemanticKITTI-MOS val (seq {d['val_sequences']}) ===")
+    level = "point-level" if args.point_level else "voxel-level"
+    print(f"\n=== SemanticKITTI-MOS val (seq {d['val_sequences']}) "
+          f"[{level}, threshold={args.threshold}] ===")
     print(f"moving-class IoU: {iou:.4f}")
     print(f"precision: {prec:.4f}   recall: {rec:.4f}")
     print(f"TP={tp} FP={fp} FN={fn}")

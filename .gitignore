@@ -1,0 +1,8 @@
+# Python bytecode / caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Common local artifacts (checkpoints/logs live under runs/ and are large)
+*.egg-info/
+.ipynb_checkpoints/

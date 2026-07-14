@@ -73,5 +73,7 @@ class SparseUNet4D(nn.Module):
         feats = h.feats if backend() != "me" else h.F
         return {"motion_logits": self.motion_head(feats),
                 "semantic_logits": self.semantic_head(feats),
-                "offset_pred": self.offset_head(feats.detach()),
+                # offset is an auxiliary task: let its gradient shape the shared
+                # backbone (previously detached, so it could not help features).
+                "offset_pred": self.offset_head(feats),
                 "coords": h.coords if backend() != "me" else h.C}
