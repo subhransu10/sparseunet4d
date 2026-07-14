@@ -67,7 +67,7 @@ def main():
     ds = SemanticKITTI4D(d["root"], d["val_sequences"], d["n_frames"],
         d["voxel_size"], d["semantic_yaml"], "gt", 0.0, 0.0, p["seed"], d["point_range"],
         residual_feats=d.get("residual_feats", True), res_clip=d.get("res_clip", 3.0),
-        return_point_map=args.point_level)
+        return_point_map=args.point_level, frame_offsets=d.get("frame_offsets"))
     loader = DataLoader(ds, batch_size=cfg["train"]["batch_size"], shuffle=False,
                         collate_fn=me_collate, num_workers=4)
 
@@ -78,7 +78,7 @@ def main():
         n_stages=m.get("n_stages", 2), use_se=m.get("use_se", True),
         use_ego_decouple=m.get("use_ego_decouple", False)).to(dev).eval()
     ck = torch.load(args.ckpt, map_location=dev)
-    model.load_state_dict(ck["model"] if "model" in ck else ck)
+    model.load_state_dict(ck["model"] if "model" in ck else ck, strict=False)
 
     # NOTE: this uses the dataset's own motion labels (already moving=1). If your
     # dataset motion mapping == official MOS moving set (252-259 -> moving), the

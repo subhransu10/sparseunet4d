@@ -186,13 +186,15 @@ if __name__ == "__main__":
     train_ds = SemanticKITTI4D(d["root"], d["train_sequences"], d["n_frames"],
         d["voxel_size"], d["semantic_yaml"], p["mode"], p["rot_std_deg"],
         p["trans_std_m"], p["seed"], d["point_range"],
-        residual_feats=d.get("residual_feats", True), res_clip=d.get("res_clip", 3.0))
+        residual_feats=d.get("residual_feats", True), res_clip=d.get("res_clip", 3.0),
+        frame_offsets=d.get("frame_offsets"))
     train_loader = DataLoader(train_ds, batch_size=cfg["train"]["batch_size"],
         shuffle=True, collate_fn=me_collate, num_workers=nw,
         persistent_workers=(nw > 0), pin_memory=True)
     val_ds = SemanticKITTI4D(d["root"], d["val_sequences"], d["n_frames"],
         d["voxel_size"], d["semantic_yaml"], "gt", 0.0, 0.0, p["seed"], d["point_range"],
-        residual_feats=d.get("residual_feats", True), res_clip=d.get("res_clip", 3.0))
+        residual_feats=d.get("residual_feats", True), res_clip=d.get("res_clip", 3.0),
+        frame_offsets=d.get("frame_offsets"))
     val_loader = DataLoader(val_ds, batch_size=cfg["train"]["batch_size"],
         shuffle=False, collate_fn=me_collate, num_workers=nw,
         persistent_workers=(nw > 0), pin_memory=True)

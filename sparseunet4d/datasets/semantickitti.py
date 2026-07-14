@@ -79,7 +79,7 @@ class SemanticKITTI4D(Dataset):
                  rot_std_deg=0.0, trans_std_m=0.0, pose_seed=0,
                  point_range=51.2, max_points=None,
                  residual_feats=True, res_clip=3.0,
-                 return_point_map=False):
+                 return_point_map=False, frame_offsets=None):
         """
         root:        .../sequences
         sequences:   list of int (e.g. list(range(11)) for train/val)
@@ -100,6 +100,13 @@ class SemanticKITTI4D(Dataset):
         self.residual_feats = residual_feats
         self.res_clip = res_clip
         self.return_point_map = return_point_map
+        # Temporal offsets into the past (t index 0 == reference, offset 0).
+        # Strided offsets (e.g. [1, 2, 4, 8]) widen the window so slow / nearby
+        # movers displace enough between scans to leave a residual signal.
+        # Default (None) reproduces consecutive frames [1 .. n_frames-1].
+        self.offsets = (list(frame_offsets) if frame_offsets
+                        else list(range(1, n_frames)))
+        self.n_frames = 1 + len(self.offsets)   # authoritative frame count
 
         self.lut = None
         if semantic_yaml is not None:
@@ -130,14 +137,17 @@ class SemanticKITTI4D(Dataset):
     def __getitem__(self, i):
         seq, ref = self.index[i]
         provider = self.pose_providers[seq]
-        # frames: ref, ref-1, ..., ref-(n_frames-1) ; t index 0 == reference
-        frames = [ref - k for k in range(self.n_frames)]
-        frames = [f for f in frames if f >= 0]
+        # temporal stack: (t_idx, frame, offset). t_idx 0 == reference (offset 0).
+        # Early-in-sequence frames whose offset runs before frame 0 are dropped;
+        # their residual channels become zeros (handled below), keeping K fixed.
+        stack = [(t, ref - o, o) for t, o in enumerate([0] + self.offsets)
+                 if ref - o >= 0]
+        stack_offsets = [o for (_, _, o) in stack]
 
         coords_all, feats_all, mot_all, sem_all = [], [], [], []
         off_all, omask_all = [], []
         frame_xyz = []  # keep clipped xyz per frame for residual computation
-        for t_idx, f in enumerate(frames):
+        for t_idx, f, o in stack:
             bin_p, lab_p = self._frame_paths(seq, f)
             scan = _read_scan(bin_p)
             xyz, remission = scan[:, :3], scan[:, 3:4]
@@ -192,14 +202,17 @@ class SemanticKITTI4D(Dataset):
         # of how many past frames actually loaded (early-in-sequence -> zeros).
         K = self.n_frames - 1
         if self.residual_feats and K > 0:
-            past_by_off = {ref - frames[t]: frame_xyz[t]
-                           for t in range(1, len(frames))}
-            past_list = [past_by_off.get(k, np.zeros((0, 3), np.float32))
-                         for k in range(1, self.n_frames)]
+            # map temporal offset -> that past frame's xyz (skip the reference)
+            past_by_off = {stack_offsets[t]: frame_xyz[t]
+                           for t in range(1, len(frame_xyz))}
+            # channel k corresponds to self.offsets[k]; a missing offset (early
+            # in the sequence) contributes an empty past -> zero residual.
+            past_list = [past_by_off.get(o, np.zeros((0, 3), np.float32))
+                         for o in self.offsets]
             R = residual_channels(frame_xyz[0], past_list,
                                   normalize=False, clip=self.res_clip)  # (N_ref, K)
             res_blocks = [R] + [np.zeros((len(frame_xyz[t]), K), np.float32)
-                               for t in range(1, len(frames))]
+                               for t in range(1, len(frame_xyz))]
             residuals = np.concatenate(res_blocks, 0)
             feats = np.concatenate([feats, residuals], axis=1)  # (total, 1+K)
         # -----------------------------------------------------------------------
