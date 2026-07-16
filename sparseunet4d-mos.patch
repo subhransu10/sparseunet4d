@@ -1,0 +1,447 @@
+From e27f38547452a97a81475c862aafa7069368a7b7 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 14 Jul 2026 08:23:55 +0000
+Subject: [PATCH] MOS recall fixes: voxel label aggregation, threshold
+ selection, Tversky, point-level eval
+
+Address the recall-limited operating point (val P~0.92 / R~0.64 -> IoU ~0.62):
+
+- semantickitti.py: collapse duplicate voxels by max motion priority
+  (moving > static > ignore) instead of keeping the first point, so a voxel
+  is moving whenever any of its points is. Add opt-in return_point_map with
+  full-resolution reference labels + point->voxel index for point-level eval.
+- collate.py: forward the point map, offsetting voxel indices per sample.
+- metrics.py: MovingThresholdMeter sweeps softmax cutoffs and reports the
+  IoU-optimal threshold (the model has large precision headroom below 0.5).
+- train.py: validate() selects best.pt by threshold-optimal moving IoU and
+  saves the chosen threshold in the checkpoint; logs argmax IoU alongside.
+- model.py: stop detaching the offset head so its aux loss can shape the
+  shared backbone.
+- eval_mos_official.py: --point-level propagates each voxel prediction to all
+  reference points (official protocol) and --threshold applies the tuned cutoff.
+- configs/residual_v3.yaml: Tversky on (a=0.3, b=0.7) and semantic_weight 0.3.
+- .gitignore: ignore Python bytecode caches.
+---
+ .gitignore                             |  8 ++++
+ configs/residual_v3.yaml               | 61 ++++++++++++++++++++++++++
+ eval_mos_official.py                   | 38 +++++++++++-----
+ scripts/train.py                       | 36 +++++++++------
+ sparseunet4d/datasets/collate.py       | 18 ++++++--
+ sparseunet4d/datasets/semantickitti.py | 44 ++++++++++++++-----
+ sparseunet4d/models/model.py           |  4 +-
+ sparseunet4d/utils/metrics.py          | 42 ++++++++++++++++++
+ 8 files changed, 211 insertions(+), 40 deletions(-)
+ create mode 100644 .gitignore
+ create mode 100644 configs/residual_v3.yaml
+
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 0000000..947b1e9
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,8 @@
++# Python bytecode / caches
++__pycache__/
++*.py[cod]
++*$py.class
++
++# Common local artifacts (checkpoints/logs live under runs/ and are large)
++*.egg-info/
++.ipynb_checkpoints/
+diff --git a/configs/residual_v3.yaml b/configs/residual_v3.yaml
+new file mode 100644
+index 0000000..73d338a
+--- /dev/null
++++ b/configs/residual_v3.yaml
+@@ -0,0 +1,61 @@
++# residual_v3: recall-focused MOS tuning on top of residual_v2.
++#   - Tversky loss ON (beta>alpha favours recall -> attacks the FN problem)
++#   - semantic head down-weighted (it dominated the loss but only reached
++#     ~0.39 mIoU and starved the motion head for a MOS-headline run)
++#   - validation now selects best.pt by the threshold-optimal moving IoU
++#     (see scripts/train.py); no config knob needed for that.
++dataset:
++  root: /mnt/d/Subhransu workspace/Dataset/my_kitti_dataset/dataset/sequences
++  semantic_yaml: /mnt/d/Subhransu workspace/Dataset/my_kitti_dataset/dataset/sequences/semantic-kitti.yaml
++  train_sequences:
++  - 0
++  - 1
++  - 2
++  - 3
++  - 4
++  - 5
++  - 6
++  - 7
++  - 9
++  - 10
++  val_sequences:
++  - 8
++  n_frames: 4
++  voxel_size: 0.1
++  point_range: 51.2
++  residual_feats: true
++  res_clip: 3.0
++pose:
++  mode: gt
++  rot_std_deg: 0.0
++  trans_std_m: 0.0
++  seed: 0
++train:
++  batch_size: 2
++  iters: 40000
++  lr: 0.001
++  weight_decay: 0.0001
++  val_every: 1000
++loss:
++  motion_weight: 1.0
++  semantic_weight: 0.3       # was 1.0; semantic CE dominated & starved MOS
++  dice_weight: 1.0
++  moving_class_weight: 5.0
++  consistency_weight: 0.0
++  tversky: true              # was off; recall-favouring loss for the FN problem
++  tversky_alpha: 0.3
++  tversky_beta: 0.7
++robustness:
++  rot_std_deg_sweep:
++  - 0.0
++  - 0.25
++  - 0.5
++  - 1.0
++  - 2.0
++  trans_std_m_sweep:
++  - 0.0
++  - 0.05
++  - 0.1
++  - 0.2
++  - 0.4
++model: {}
+diff --git a/eval_mos_official.py b/eval_mos_official.py
+index 81e90e6..aa5492a 100644
+--- a/eval_mos_official.py
++++ b/eval_mos_official.py
+@@ -43,6 +43,14 @@ def main():
+     ap.add_argument("--ckpt", required=True)
+     ap.add_argument("--mos-yaml", required=True,
+                     help="official semantic-kitti-mos.yaml")
++    ap.add_argument("--point-level", action="store_true",
++                    help="propagate each voxel prediction back to ALL of its "
++                         "reference points and score point-level (official MOS "
++                         "protocol). Default scores the deduplicated voxels.")
++    ap.add_argument("--threshold", type=float, default=0.5,
++                    help="moving-class softmax cutoff (use the threshold saved "
++                         "in the checkpoint / found by eval_threshold_sweep.py; "
++                         "default 0.5 == argmax).")
+     args = ap.parse_args()
+     with open(args.config) as f:
+         cfg = yaml.safe_load(f); cfg.setdefault("model", {})
+@@ -58,7 +66,8 @@ def main():
+ 
+     ds = SemanticKITTI4D(d["root"], d["val_sequences"], d["n_frames"],
+         d["voxel_size"], d["semantic_yaml"], "gt", 0.0, 0.0, p["seed"], d["point_range"],
+-        residual_feats=d.get("residual_feats", True), res_clip=d.get("res_clip", 3.0))
++        residual_feats=d.get("residual_feats", True), res_clip=d.get("res_clip", 3.0),
++        return_point_map=args.point_level)
+     loader = DataLoader(ds, batch_size=cfg["train"]["batch_size"], shuffle=False,
+                         collate_fn=me_collate, num_workers=4)
+ 
+@@ -74,7 +83,6 @@ def main():
+     # NOTE: this uses the dataset's own motion labels (already moving=1). If your
+     # dataset motion mapping == official MOS moving set (252-259 -> moving), the
+     # numbers are directly comparable. We verify overlap below.
+-    inter = union = 0
+     tp = fp = fn = 0
+     with torch.no_grad():
+         for batch in loader:
+@@ -86,16 +94,26 @@ def main():
+                 from sparseunet4d.models.backend import ST
+                 x = ST(feats, coords)
+             out = model(x)
+-            pred = out["motion_logits"].argmax(1).cpu().numpy()
+-            gt = batch["motion"].numpy()
+-            mask = gt != -1
+-            pr, g = pred[mask], gt[mask]
+-            tp += int(((pr == 1) & (g == 1)).sum())
+-            fp += int(((pr == 1) & (g == 0)).sum())
+-            fn += int(((pr == 0) & (g == 1)).sum())
++            prob = torch.softmax(out["motion_logits"], 1)[:, 1].cpu().numpy()
++            if args.point_level:
++                # each reference point inherits its voxel's moving probability
++                rpv = batch["ref_point_voxel"].numpy()
++                g = batch["ref_point_motion"].numpy()
++                pm = prob[rpv]
++            else:
++                g = batch["motion"].numpy()
++                pm = prob
++            mask = g != -1
++            pr = (pm[mask] >= args.threshold).astype(np.int64)
++            gm = g[mask]
++            tp += int(((pr == 1) & (gm == 1)).sum())
++            fp += int(((pr == 1) & (gm == 0)).sum())
++            fn += int(((pr == 0) & (gm == 1)).sum())
+     iou = tp / max(tp + fp + fn, 1)
+     prec = tp / max(tp + fp, 1); rec = tp / max(tp + fn, 1)
+-    print(f"\n=== SemanticKITTI-MOS val (seq {d['val_sequences']}) ===")
++    level = "point-level" if args.point_level else "voxel-level"
++    print(f"\n=== SemanticKITTI-MOS val (seq {d['val_sequences']}) "
++          f"[{level}, threshold={args.threshold}] ===")
+     print(f"moving-class IoU: {iou:.4f}")
+     print(f"precision: {prec:.4f}   recall: {rec:.4f}")
+     print(f"TP={tp} FP={fp} FN={fn}")
+diff --git a/scripts/train.py b/scripts/train.py
+index 7672c13..7fe07e4 100644
+--- a/scripts/train.py
++++ b/scripts/train.py
+@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+ from sparseunet4d.models.backend import ST, backend
+ from sparseunet4d.models.model import SparseUNet4D
+ from sparseunet4d.models.losses import total_loss
+-from sparseunet4d.utils.metrics import IoUMeter
++from sparseunet4d.utils.metrics import IoUMeter, MovingThresholdMeter
+ 
+ 
+ def to_st(batch, device):
+@@ -46,21 +46,25 @@ def run_batch(model, batch, cfg, device, drift_batch=None):
+ 
+ 
+ def validate(model, loader, cfg, device, num_sem):
+-    model.eval(); mos, sem = IoUMeter(2), IoUMeter(num_sem)
++    model.eval(); mos, sem = MovingThresholdMeter(), IoUMeter(num_sem)
+     with torch.no_grad():
+         for batch in loader:
+             out, _, _ = run_batch(model, batch, cfg, device)
+             mos.update(out["motion_logits"], batch["motion"].to(device))
+             sem.update(out["semantic_logits"], batch["semantic"].to(device))
+     model.train()
+-    prec, rec = mos.moving_pr()
+-    return {"moving_iou": mos.moving_iou(), "semantic_miou": sem.miou(),
+-            "moving_prec": prec, "moving_rec": rec}
++    b = mos.best()
++    # 'moving_iou' is now the threshold-optimal IoU (used for model selection);
++    # 'moving_iou_argmax' keeps the old argmax@0.5 number for comparison.
++    return {"moving_iou": b["iou"], "moving_iou_argmax": b["iou_argmax"],
++            "moving_threshold": b["threshold"], "semantic_miou": sem.miou(),
++            "moving_prec": b["prec"], "moving_rec": b["rec"]}
+ 
+ 
+-def save_ckpt(path, model, opt, cfg, it, best_iou, no_improve):
++def save_ckpt(path, model, opt, cfg, it, best_iou, no_improve, best_threshold=0.5):
+     torch.save({"model": model.state_dict(), "optimizer": opt.state_dict(),
+                 "iter": it, "best_moving_iou": best_iou,
++                "best_threshold": best_threshold,
+                 "no_improve": no_improve, "config": cfg}, path)
+ 
+ 
+@@ -97,26 +101,30 @@ def train(cfg, train_loader, val_loader=None, device="cpu", drift_loader=None,
+     schedule = cfg["train"].get("lr_schedule", "cosine")
+     drift_iter = iter(drift_loader) if drift_loader is not None else None
+ 
+-    it, best_iou, no_improve = 0, -1.0, 0
++    it, best_iou, no_improve, best_thr = 0, -1.0, 0, 0.5
+     if resume and os.path.exists(resume):
+         ck = torch.load(resume, map_location=device)
+         model.load_state_dict(ck["model"]); opt.load_state_dict(ck["optimizer"])
+         it = ck.get("iter", 0); best_iou = ck.get("best_moving_iou", -1.0)
+-        no_improve = ck.get("no_improve", 0)
++        no_improve = ck.get("no_improve", 0); best_thr = ck.get("best_threshold", 0.5)
+         print(f"resumed from {resume} @ iter {it} (best={best_iou:.4f})")
+ 
+     def checkpoint_and_eval(it):
+-        nonlocal best_iou, no_improve
+-        save_ckpt(os.path.join(save_dir, "last.pt"), model, opt, cfg, it, best_iou, no_improve)
++        nonlocal best_iou, no_improve, best_thr
++        save_ckpt(os.path.join(save_dir, "last.pt"), model, opt, cfg, it, best_iou,
++                  no_improve, best_thr)
+         if val_loader is None: return False
+         v = validate(model, val_loader, cfg, device, num_sem)
+-        print(f"  [val @ {it}] moving_iou={v['moving_iou']:.4f} "
++        print(f"  [val @ {it}] moving_iou={v['moving_iou']:.4f}@th{v['moving_threshold']:.2f} "
++              f"(argmax {v['moving_iou_argmax']:.4f}) "
+               f"P={v['moving_prec']:.3f} R={v['moving_rec']:.3f} "
+               f"semantic_miou={v['semantic_miou']:.4f}", flush=True)
+         if v["moving_iou"] > best_iou:
+-            best_iou = v["moving_iou"]; no_improve = 0
+-            save_ckpt(os.path.join(save_dir, "best.pt"), model, opt, cfg, it, best_iou, no_improve)
+-            print(f"  [val @ {it}] new best -> best.pt ({best_iou:.4f})", flush=True)
++            best_iou = v["moving_iou"]; no_improve = 0; best_thr = v["moving_threshold"]
++            save_ckpt(os.path.join(save_dir, "best.pt"), model, opt, cfg, it, best_iou,
++                      no_improve, best_thr)
++            print(f"  [val @ {it}] new best -> best.pt ({best_iou:.4f} @ th {best_thr:.2f})",
++                  flush=True)
+         else:
+             no_improve += 1
+         if patience and no_improve >= patience:
+diff --git a/sparseunet4d/datasets/collate.py b/sparseunet4d/datasets/collate.py
+index a8a21b6..d8ae655 100644
+--- a/sparseunet4d/datasets/collate.py
++++ b/sparseunet4d/datasets/collate.py
+@@ -12,6 +12,9 @@ import torch
+ def me_collate(batch):
+     coords_list, feats_list, mot_list, sem_list, metas = [], [], [], [], []
+     off_list, offm_list = [], []
++    has_pm = "ref_point_voxel" in batch[0]
++    rpv_list, rpm_list = [], []
++    voxel_offset = 0                       # rows already placed in the batch tensor
+     for b, s in enumerate(batch):
+         c = s["coords"]
+         bcol = np.full((len(c), 1), b, dtype=np.int32)
+@@ -22,12 +25,21 @@ def me_collate(batch):
+         off_list.append(s["offset"])
+         offm_list.append(s["offset_mask"])
+         metas.append(s["meta"])
++        if has_pm:
++            # shift each sample's voxel indices into the concatenated row space
++            rpv_list.append(s["ref_point_voxel"] + voxel_offset)
++            rpm_list.append(s["ref_point_motion"])
++        voxel_offset += len(c)
+     coords = torch.from_numpy(np.concatenate(coords_list, 0)).int()
+     feats = torch.from_numpy(np.concatenate(feats_list, 0)).float()
+     motion = torch.from_numpy(np.concatenate(mot_list, 0)).long()
+     semantic = torch.from_numpy(np.concatenate(sem_list, 0)).long()
+     offset = torch.from_numpy(np.concatenate(off_list, 0)).float()
+     offset_mask = torch.from_numpy(np.concatenate(offm_list, 0)).bool()
+-    return {"coords": coords, "feats": feats,
+-            "motion": motion, "semantic": semantic,
+-            "offset": offset, "offset_mask": offset_mask, "meta": metas}
++    out = {"coords": coords, "feats": feats,
++           "motion": motion, "semantic": semantic,
++           "offset": offset, "offset_mask": offset_mask, "meta": metas}
++    if has_pm:
++        out["ref_point_voxel"] = torch.from_numpy(np.concatenate(rpv_list, 0)).long()
++        out["ref_point_motion"] = torch.from_numpy(np.concatenate(rpm_list, 0)).long()
++    return out
+diff --git a/sparseunet4d/datasets/semantickitti.py b/sparseunet4d/datasets/semantickitti.py
+index d027600..c0ea5a5 100644
+--- a/sparseunet4d/datasets/semantickitti.py
++++ b/sparseunet4d/datasets/semantickitti.py
+@@ -78,7 +78,8 @@ class SemanticKITTI4D(Dataset):
+                  semantic_yaml=None, pose_mode="gt",
+                  rot_std_deg=0.0, trans_std_m=0.0, pose_seed=0,
+                  point_range=51.2, max_points=None,
+-                 residual_feats=True, res_clip=3.0):
++                 residual_feats=True, res_clip=3.0,
++                 return_point_map=False):
+         """
+         root:        .../sequences
+         sequences:   list of int (e.g. list(range(11)) for train/val)
+@@ -98,6 +99,7 @@ class SemanticKITTI4D(Dataset):
+         self.max_points = max_points
+         self.residual_feats = residual_feats
+         self.res_clip = res_clip
++        self.return_point_map = return_point_map
+ 
+         self.lut = None
+         if semantic_yaml is not None:
+@@ -207,15 +209,33 @@ class SemanticKITTI4D(Dataset):
+         qcoords[:, :3] = np.floor(coords[:, :3] / self.voxel_size)
+         qcoords = qcoords.astype(np.int32)
+ 
+-        # collapse duplicate (x,y,z,t) voxels -> keep first; aggregate labels by max
+-        _, uniq = np.unique(qcoords, axis=0, return_index=True)
+-        uniq.sort()
+-        return {
+-            "coords": qcoords[uniq],          # (M, 4) int32  (x, y, z, t)
+-            "feats": feats[uniq],             # (M, 1+K) float32
+-            "motion": mot[uniq],              # (M,)  int64
+-            "semantic": sem[uniq],            # (M,)  int64
+-            "offset": off[uniq].astype(np.float32),   # (M, 3) float32
+-            "offset_mask": omask[uniq],       # (M,)  bool
++        # collapse duplicate (x,y,z,t) voxels. Each voxel takes ALL its labels
++        # from a single representative point chosen by motion priority
++        # (moving > static > ignore), so a voxel is MOVING whenever ANY of its
++        # points is moving. Previously we kept the first point and silently
++        # dropped moving labels at mixed voxels -> a bias against the moving
++        # class in both the GT and the training signal.
++        uniq_coords, inv = np.unique(qcoords, axis=0, return_inverse=True)
++        inv = inv.reshape(-1)
++        G = uniq_coords.shape[0]
++        rep = np.empty(G, dtype=np.int64)
++        order = np.argsort(mot, kind="stable")   # ascending: ignore(-1),static(0),moving(1)
++        rep[inv[order]] = order                  # last write per voxel = max-priority point
++        out = {
++            "coords": uniq_coords,                    # (M, 4) int32  (x, y, z, t)
++            "feats": feats[rep],                      # (M, 1+K) float32
++            "motion": mot[rep],                       # (M,)  int64
++            "semantic": sem[rep],                     # (M,)  int64
++            "offset": off[rep].astype(np.float32),    # (M, 3) float32
++            "offset_mask": omask[rep],                # (M,)  bool
+             "meta": (seq, ref),
+-        }
+\ No newline at end of file
++        }
++        if self.return_point_map:
++            # full-resolution reference-frame labels + the voxel row each point
++            # maps to, so eval can propagate voxel predictions back to EVERY
++            # point (official point-level MOS protocol) rather than scoring the
++            # deduplicated voxels. Reference frame is block 0 of the stack.
++            n_ref = len(frame_xyz[0])
++            out["ref_point_motion"] = mot[:n_ref].astype(np.int64)
++            out["ref_point_voxel"] = inv[:n_ref].astype(np.int64)
++        return out
+\ No newline at end of file
+diff --git a/sparseunet4d/models/model.py b/sparseunet4d/models/model.py
+index 319e0cd..f6bdc28 100644
+--- a/sparseunet4d/models/model.py
++++ b/sparseunet4d/models/model.py
+@@ -73,5 +73,7 @@ class SparseUNet4D(nn.Module):
+         feats = h.feats if backend() != "me" else h.F
+         return {"motion_logits": self.motion_head(feats),
+                 "semantic_logits": self.semantic_head(feats),
+-                "offset_pred": self.offset_head(feats.detach()),
++                # offset is an auxiliary task: let its gradient shape the shared
++                # backbone (previously detached, so it could not help features).
++                "offset_pred": self.offset_head(feats),
+                 "coords": h.coords if backend() != "me" else h.C}
+\ No newline at end of file
+diff --git a/sparseunet4d/utils/metrics.py b/sparseunet4d/utils/metrics.py
+index 95f0213..87976c3 100644
+--- a/sparseunet4d/utils/metrics.py
++++ b/sparseunet4d/utils/metrics.py
+@@ -46,3 +46,45 @@ class IoUMeter:
+         prec = (tp / self.pred_cnt[1].clamp(min=1)).item()
+         rec = (tp / self.gt_cnt[1].clamp(min=1)).item()
+         return prec, rec
++
++
++class MovingThresholdMeter:
++    """Streaming TP/FP/FN for the moving class over a grid of softmax
++    thresholds, so validation can report (and select on) the IoU-optimal
++    operating point instead of argmax@0.5. The model is heavily precision-
++    skewed, so the best threshold is typically well below 0.5. Ignores -1."""
++
++    def __init__(self, thresholds=(0.5, 0.4, 0.3, 0.25, 0.2, 0.15, 0.1)):
++        self.th = torch.tensor(list(thresholds), dtype=torch.float64)
++        self.reset()
++
++    def reset(self):
++        k = len(self.th)
++        self.tp = torch.zeros(k, dtype=torch.float64)
++        self.fp = torch.zeros(k, dtype=torch.float64)
++        self.fn = torch.zeros(k, dtype=torch.float64)
++
++    def update(self, logits, labels):
++        mask = labels != IGNORE_INDEX
++        if mask.sum() == 0:
++            return
++        prob = torch.softmax(logits[mask].float(), dim=1)[:, 1].detach().cpu().double()
++        gpos = (labels[mask] == 1).cpu()
++        for k in range(len(self.th)):
++            pr = prob >= self.th[k]
++            self.tp[k] += float((pr & gpos).sum())
++            self.fp[k] += float((pr & ~gpos).sum())
++            self.fn[k] += float((~pr & gpos).sum())
++
++    def iou_curve(self):
++        return self.tp / (self.tp + self.fp + self.fn).clamp(min=1)
++
++    def best(self):
++        """Return the IoU-optimal threshold and its P/R, plus the argmax@0.5
++        IoU for reference (threshold 0.5 is index 0)."""
++        iou = self.iou_curve()
++        k = int(torch.argmax(iou))
++        prec = (self.tp[k] / (self.tp[k] + self.fp[k]).clamp(min=1)).item()
++        rec = (self.tp[k] / (self.tp[k] + self.fn[k]).clamp(min=1)).item()
++        return {"threshold": float(self.th[k]), "iou": float(iou[k]),
++                "prec": prec, "rec": rec, "iou_argmax": float(iou[0])}
+-- 
+2.43.0
+

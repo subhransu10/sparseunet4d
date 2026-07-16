@@ -65,7 +65,7 @@ def main():
         d["voxel_size"], d["semantic_yaml"], "gt", 0.0, 0.0, p["seed"],
         d["point_range"],
         residual_feats=d.get("residual_feats", True),
-        res_clip=d.get("res_clip", 3.0))
+        res_clip=d.get("res_clip", 3.0), frame_offsets=d.get("frame_offsets"))
     loader = DataLoader(ds, batch_size=1, shuffle=False,
                         collate_fn=me_collate, num_workers=4)
 
@@ -75,7 +75,7 @@ def main():
         n_stages=m.get("n_stages", 2), use_se=m.get("use_se", True),
         use_ego_decouple=m.get("use_ego_decouple", False)).to(dev).eval()
     ck = torch.load(args.ckpt, map_location=dev)
-    model.load_state_dict(ck["model"] if "model" in ck else ck)
+    model.load_state_dict(ck["model"] if "model" in ck else ck, strict=False)
 
     KF = len(FRACS)
     tp = np.zeros(KF + 1, np.int64); fp = np.zeros(KF + 1, np.int64)

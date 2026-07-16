@@ -79,7 +79,9 @@ class SemanticKITTI4D(Dataset):
                  rot_std_deg=0.0, trans_std_m=0.0, pose_seed=0,
                  point_range=51.2, max_points=None,
                  residual_feats=True, res_clip=3.0,
-                 return_point_map=False, frame_offsets=None):
+                 return_point_map=False, frame_offsets=None,
+                 augment=False, aug_scale=(0.95, 1.05), aug_rot_deg=180.0,
+                 fixed_transform=None):
         """
         root:        .../sequences
         sequences:   list of int (e.g. list(range(11)) for train/val)
@@ -107,6 +109,16 @@ class SemanticKITTI4D(Dataset):
         self.offsets = (list(frame_offsets) if frame_offsets
                         else list(range(1, n_frames)))
         self.n_frames = 1 + len(self.offsets)   # authoritative frame count
+        # train-time geometric augmentation (identical transform for every frame
+        # in the stack, so registration and the residual signal are preserved).
+        self.augment = augment
+        self.aug_scale = aug_scale
+        self.aug_rot_deg = aug_rot_deg
+        # deterministic per-view transform for test-time augmentation; when set
+        # it overrides random `augment`. Use range-preserving transforms (D4) so
+        # the box range-clip keeps the same points in the same order across views.
+        self.fixed_transform = (None if fixed_transform is None
+                                else np.asarray(fixed_transform, np.float32))
 
         self.lut = None
         if semantic_yaml is not None:
@@ -134,6 +146,20 @@ class SemanticKITTI4D(Dataset):
         lab_p = os.path.join(seq_dir, "labels", f"{frame:06d}.label")
         return bin_p, lab_p
 
+    def _aug_matrix(self):
+        """Random z-rotation + x/y flips + uniform scale as one 3x3 matrix.
+        Applied identically to every frame in the stack; a fresh entropy-seeded
+        RNG avoids the numpy-in-DataLoader-workers duplication pitfall."""
+        rng = np.random.default_rng()
+        th = np.deg2rad(rng.uniform(-self.aug_rot_deg, self.aug_rot_deg))
+        c, s = np.cos(th), np.sin(th)
+        Rz = np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]], np.float32)
+        fx = -1.0 if rng.random() < 0.5 else 1.0
+        fy = -1.0 if rng.random() < 0.5 else 1.0
+        Fl = np.diag([fx, fy, 1.0]).astype(np.float32)
+        sc = float(rng.uniform(self.aug_scale[0], self.aug_scale[1]))
+        return (sc * (Rz @ Fl)).astype(np.float32)
+
     def __getitem__(self, i):
         seq, ref = self.index[i]
         provider = self.pose_providers[seq]
@@ -143,6 +169,14 @@ class SemanticKITTI4D(Dataset):
         stack = [(t, ref - o, o) for t, o in enumerate([0] + self.offsets)
                  if ref - o >= 0]
         stack_offsets = [o for (_, _, o) in stack]
+        # one shared transform for the whole stack: a fixed TTA view if given,
+        # else a random train-time augmentation, else none.
+        if self.fixed_transform is not None:
+            aug_R = self.fixed_transform
+        elif self.augment:
+            aug_R = self._aug_matrix()
+        else:
+            aug_R = None
 
         coords_all, feats_all, mot_all, sem_all = [], [], [], []
         off_all, omask_all = [], []
@@ -156,6 +190,11 @@ class SemanticKITTI4D(Dataset):
             if t_idx != 0:
                 T = provider.relative(f, ref)
                 xyz = _transform(xyz, T).astype(np.float32)
+
+            # augment AFTER registration so the same transform hits every frame
+            # (relative alignment preserved -> static surfaces still cancel).
+            if aug_R is not None:
+                xyz = (xyz @ aug_R.T).astype(np.float32)
 
             # range clip
             if self.point_range is not None:
