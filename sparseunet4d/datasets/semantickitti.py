@@ -81,7 +81,8 @@ class SemanticKITTI4D(Dataset):
                  residual_feats=True, res_clip=3.0,
                  return_point_map=False, frame_offsets=None,
                  augment=False, aug_scale=(0.95, 1.05), aug_rot_deg=180.0,
-                 fixed_transform=None):
+                 fixed_transform=None,
+                 inject_bank=None, inject_prob=0.0, inject_max_n=4):
         """
         root:        .../sequences
         sequences:   list of int (e.g. list(range(11)) for train/val)
@@ -119,6 +120,13 @@ class SemanticKITTI4D(Dataset):
         # the box range-clip keeps the same points in the same order across views.
         self.fixed_transform = (None if fixed_transform is None
                                 else np.asarray(fixed_transform, np.float32))
+        # trajectory-consistent moving-instance injection (train only): paste
+        # real movers from the bank with ONE rigid transform applied to all of
+        # their frames, so the residual channels see a genuine motion signature.
+        self.inject_bank_path = inject_bank
+        self.inject_prob = float(inject_prob)
+        self.inject_max_n = int(inject_max_n)
+        self._bank = None   # lazy per-worker load
 
         self.lut = None
         if semantic_yaml is not None:
@@ -145,6 +153,90 @@ class SemanticKITTI4D(Dataset):
         bin_p = os.path.join(seq_dir, "velodyne", f"{frame:06d}.bin")
         lab_p = os.path.join(seq_dir, "labels", f"{frame:06d}.label")
         return bin_p, lab_p
+
+    def _ensure_bank(self):
+        if self._bank is None:
+            self._bank = np.load(self.inject_bank_path, allow_pickle=True)
+        return self._bank
+
+    def _inject_movers(self, stack_offsets, frame_xyz, coords_all, feats_all,
+                       mot_all, sem_all, off_all, omask_all):
+        """Paste 1..inject_max_n bank movers into this stack.
+
+        One rigid yaw+translation per instance is applied to EVERY frame of its
+        trajectory, so its ego-compensated displacement (what the residual
+        channels measure) is preserved exactly. Placement is rejected if the
+        target area is already occupied in the reference frame. Must run BEFORE
+        residual computation so injected points get real residuals.
+        """
+        rng = np.random.default_rng()
+        if rng.random() > self.inject_prob or len(frame_xyz) < 2:
+            return
+        bank = self._ensure_bank()
+        ref_xy = frame_xyz[0][:, :2]
+        for _ in range(int(rng.integers(1, self.inject_max_n + 1))):
+            inst = bank[int(rng.integers(len(bank)))]
+            pts0 = inst["frames"][0]
+            c0 = pts0[:, :3].mean(0)
+            placed = None
+            for _try in range(5):
+                th = rng.uniform(-np.pi, np.pi)
+                c, s = np.cos(th), np.sin(th)
+                R = np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]], np.float32)
+                r = rng.uniform(6.0, 35.0); ang = rng.uniform(-np.pi, np.pi)
+                target = np.array([r * np.cos(ang), r * np.sin(ang)], np.float32)
+                # translation that moves the (rotated) ref centroid to target;
+                # z untouched: bank and scene share the sensor's mounting height.
+                t = np.zeros(3, np.float32)
+                t[:2] = target - (R[:2, :2] @ c0[:2].astype(np.float32))
+                p0 = pts0[:, :3] @ R.T + t
+                if self.point_range is not None and \
+                        np.abs(p0[:, :2]).max() >= self.point_range - 1.0:
+                    continue
+                # free-space check: few existing ref points inside the footprint
+                lo, hi = p0[:, :2].min(0) - 0.3, p0[:, :2].max(0) + 0.3
+                occ = ((ref_xy > lo) & (ref_xy < hi)).all(1).sum()
+                if occ > 0.10 * len(p0) + 20:
+                    continue
+                placed = (R, t)
+                break
+            if placed is None:
+                continue
+            R, t = placed
+            sem_lab = (int(to_semantic_labels(
+                np.array([inst["sem_raw"]]), self.lut)[0])
+                if self.lut is not None else IGNORE_INDEX)
+            for t_idx, o in enumerate(stack_offsets):
+                if o not in inst["frames"]:
+                    continue        # object absent that far back (newly visible)
+                arr = inst["frames"][o]
+                xyz = (arr[:, :3] @ R.T + t).astype(np.float32)
+                rem = arr[:, 3:4].astype(np.float32)
+                if self.point_range is not None:
+                    m = np.all(np.abs(xyz) < self.point_range, axis=1)
+                    xyz, rem = xyz[m], rem[m]
+                if len(xyz) == 0:
+                    continue
+                n = len(xyz)
+                frame_xyz[t_idx] = np.concatenate([frame_xyz[t_idx], xyz], 0)
+                t_col = np.full((n, 1), t_idx, dtype=np.float32)
+                coords_all[t_idx] = np.concatenate(
+                    [coords_all[t_idx], np.concatenate([xyz, t_col], 1)], 0)
+                feats_all[t_idx] = np.concatenate([feats_all[t_idx], rem], 0)
+                if t_idx == 0:
+                    mot_i = np.ones(n, np.int64)
+                    sem_i = np.full(n, sem_lab, np.int64)
+                    off_i = (xyz.mean(0) - xyz).astype(np.float32)
+                    om_i = np.ones(n, bool)
+                else:
+                    mot_i = np.full(n, IGNORE_INDEX, np.int64)
+                    sem_i = np.full(n, IGNORE_INDEX, np.int64)
+                    off_i = np.zeros((n, 3), np.float32)
+                    om_i = np.zeros(n, bool)
+                mot_all[t_idx] = np.concatenate([mot_all[t_idx], mot_i], 0)
+                sem_all[t_idx] = np.concatenate([sem_all[t_idx], sem_i], 0)
+                off_all[t_idx] = np.concatenate([off_all[t_idx], off_i], 0)
+                omask_all[t_idx] = np.concatenate([omask_all[t_idx], om_i], 0)
 
     def _aug_matrix(self):
         """Random z-rotation + x/y flips + uniform scale as one 3x3 matrix.
@@ -227,6 +319,12 @@ class SemanticKITTI4D(Dataset):
             sem_all.append(sem)
             off_all.append(off)
             omask_all.append(omask)
+
+        # trajectory-consistent mover injection (train only) — before residuals
+        # so injected points participate in the range-image comparison.
+        if self.inject_bank_path is not None and self.inject_prob > 0:
+            self._inject_movers(stack_offsets, frame_xyz, coords_all, feats_all,
+                                mot_all, sem_all, off_all, omask_all)
 
         coords = np.concatenate(coords_all, 0)
         feats = np.concatenate(feats_all, 0)

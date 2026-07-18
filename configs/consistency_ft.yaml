@@ -1,0 +1,41 @@
+# Phase-2 drift-consistency fine-tune (the ego-motion-robustness contribution).
+# Fine-tunes an already-trained checkpoint (pass via --init) with paired
+# clean/drifted forward passes + symmetric-KL consistency on the reference
+# voxels. Validation stays clean-pose; robustness is measured afterwards with
+# the drift sweep at multiple (rot_std, trans_std) levels.
+#
+# Ablation knobs for the paper:
+#   consistency_weight 0 + drift_sup_weight 1  -> plain drift augmentation
+#   consistency_weight 1 + drift_sup_weight 0  -> pure invariance regularizer
+#   both on (default)                          -> full method
+dataset:
+  root: /mnt/d/Subhransu workspace/Dataset/my_kitti_dataset/dataset/sequences
+  semantic_yaml: /mnt/d/Subhransu workspace/Dataset/my_kitti_dataset/dataset/sequences/semantic-kitti.yaml
+  train_sequences: [0, 1, 2, 3, 4, 5, 6, 7, 9, 10]
+  val_sequences: [8]
+  n_frames: 5
+  frame_offsets: [1, 2, 4, 8]
+  voxel_size: 0.1
+  point_range: 51.2
+  residual_feats: true
+  res_clip: 3.0
+pose_drift:            # training-time drift injected into the paired pass
+  rot_std_deg: 0.5     # per-frame-step compounding increments (mid-sweep level)
+  trans_std_m: 0.1
+  seed: 0
+train:
+  batch_size: 1        # two forward passes per step; keep memory in check
+  iters: 10000
+  lr: 0.0002           # fine-tune LR (~5x below scratch)
+  weight_decay: 0.0001
+  warmup_iters: 300
+  val_every: 500
+  num_workers: 8
+loss:
+  motion_weight: 1.0
+  semantic_weight: 1.0
+  dice_weight: 1.0
+  moving_class_weight: 2.5
+  consistency_weight: 1.0
+  drift_sup_weight: 1.0
+model: {}

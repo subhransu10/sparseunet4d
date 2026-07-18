@@ -6,3 +6,8 @@ __pycache__/
 # Common local artifacts (checkpoints/logs live under runs/ and are large)
 *.egg-info/
 .ipynb_checkpoints/
+
+*.tgz
+*Zone.Identifier
+mover_bank*.npy
+runs/**/last.pt
