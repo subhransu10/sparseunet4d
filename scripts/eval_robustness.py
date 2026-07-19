@@ -26,7 +26,9 @@ def build_val_loader(cfg, rot_std, trans_std):
         d["root"], d["val_sequences"], d["n_frames"], d["voxel_size"],
         d["semantic_yaml"], pose_mode="drift",
         rot_std_deg=rot_std, trans_std_m=trans_std,
-        pose_seed=cfg["pose"].get("seed", 0), point_range=d["point_range"])
+        pose_seed=cfg["pose"].get("seed", 0), point_range=d["point_range"],
+        residual_feats=d.get("residual_feats", True),
+        res_clip=d.get("res_clip", 3.0), frame_offsets=d.get("frame_offsets"))
     return DataLoader(ds, batch_size=cfg["train"]["batch_size"],
                       shuffle=False, collate_fn=me_collate, num_workers=4)
 
@@ -41,14 +43,21 @@ def main():
     with open(args.config) as f:
         cfg = yaml.safe_load(f)
     cfg.setdefault("model", {})
-    num_sem = cfg["dataset"].get("num_semantic", 20)
+    d = cfg["dataset"]; m = cfg["model"]
+    num_sem = d.get("num_semantic", 20)
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
+    # in_ch/arch MUST match the trained checkpoint (5 chans = 1 remission + 4
+    # residuals for frame_offsets [1,2,4,8]); the old hardcoded in_ch=1 and
+    # default arch would fail to load or mismatch silently.
+    n_frames = d.get("n_frames", 4)
+    in_ch = 1 + (n_frames - 1) if d.get("residual_feats", True) else 1
     model = SparseUNet4D(
-        in_ch=1, num_semantic=num_sem,
-        use_se=cfg["model"].get("use_se", True),
-        use_ego_decouple=cfg["model"].get("use_ego_decouple", True)).to(device)
-    ck = torch.load(args.ckpt, map_location=device); model.load_state_dict(ck["model"] if "model" in ck else ck)
+        in_ch=in_ch, num_semantic=num_sem, base=m.get("base", 32),
+        n_stages=m.get("n_stages", 2), use_se=m.get("use_se", True),
+        use_ego_decouple=m.get("use_ego_decouple", False)).to(device)
+    ck = torch.load(args.ckpt, map_location=device)
+    model.load_state_dict(ck["model"] if "model" in ck else ck, strict=False)
     model.eval()
 
     rot_sweep = cfg["robustness"]["rot_std_deg_sweep"]
