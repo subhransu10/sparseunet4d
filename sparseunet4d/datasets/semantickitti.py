@@ -46,6 +46,25 @@ def _transform(points_xyz: np.ndarray, T: np.ndarray) -> np.ndarray:
 # ============================================================================
 
 # ---- (1) module-level: replace _gt_offsets with this ----------------------
+def residual_priority_rep(inv, G, feats):
+    """Per-voxel representative = the point with the largest |residual| across
+    channels (ties -> largest input index, via stable ascending sort where the
+    last write wins). LABEL-FREE, so the training dataset and the streaming
+    inference path pick the IDENTICAL point -- unlike the motion-label pick,
+    which is unreproducible at inference and cost ~1.5 recall points at mixed
+    voxels on the robot path. Movers carry large residuals, so this
+    approximates the moving-preferring choice.
+    Shared by SemanticKITTI4D and mos_inference: keep them importing THIS."""
+    if feats.shape[1] > 1:
+        score = np.abs(feats[:, 1:]).max(1)
+    else:
+        score = np.zeros(len(feats), np.float32)
+    order = np.argsort(score, kind="stable")
+    rep = np.empty(G, dtype=np.int64)
+    rep[inv[order]] = order            # last write per voxel = max score
+    return rep
+
+
 def _gt_offsets_panoptic(xyz_m, sem_raw, inst_raw):
     """Per-point offset (meters) to its REAL instance center, for ALL thing
     points (parked + moving). Mask = thing points with a valid instance.
@@ -82,7 +101,8 @@ class SemanticKITTI4D(Dataset):
                  return_point_map=False, frame_offsets=None,
                  augment=False, aug_scale=(0.95, 1.05), aug_rot_deg=180.0,
                  fixed_transform=None,
-                 inject_bank=None, inject_prob=0.0, inject_max_n=4):
+                 inject_bank=None, inject_prob=0.0, inject_max_n=4,
+                 feat_rep="label"):
         """
         root:        .../sequences
         sequences:   list of int (e.g. list(range(11)) for train/val)
@@ -127,6 +147,11 @@ class SemanticKITTI4D(Dataset):
         self.inject_prob = float(inject_prob)
         self.inject_max_n = int(inject_max_n)
         self._bank = None   # lazy per-worker load
+        # voxel FEATURE representative: 'label' = legacy (motion-priority point,
+        # unreproducible at inference); 'residual' = argmax |residual| (label-
+        # free -> train/inference identical). Labels ALWAYS use motion priority.
+        assert feat_rep in ("label", "residual")
+        self.feat_rep = feat_rep
 
         self.lut = None
         if semantic_yaml is not None:
@@ -371,9 +396,13 @@ class SemanticKITTI4D(Dataset):
         rep = np.empty(G, dtype=np.int64)
         order = np.argsort(mot, kind="stable")   # ascending: ignore(-1),static(0),moving(1)
         rep[inv[order]] = order                  # last write per voxel = max-priority point
+        # feature representative: label-free residual priority reproduces
+        # bit-identically on the robot/streaming path; labels stay motion-max.
+        rep_f = (residual_priority_rep(inv, G, feats)
+                 if self.feat_rep == "residual" else rep)
         out = {
             "coords": uniq_coords,                    # (M, 4) int32  (x, y, z, t)
-            "feats": feats[rep],                      # (M, 1+K) float32
+            "feats": feats[rep_f],                    # (M, 1+K) float32
             "motion": mot[rep],                       # (M,)  int64
             "semantic": sem[rep],                     # (M,)  int64
             "offset": off[rep].astype(np.float32),    # (M, 3) float32

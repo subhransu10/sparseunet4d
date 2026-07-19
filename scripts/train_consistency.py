@@ -77,16 +77,30 @@ def to_st(b, dev):
 
 
 def masked_consistency(out_c, out_d, batch_c, batch_d):
-    """Symmetric KL on the aligned reference voxels of the two passes."""
-    mc = batch_c["motion"] != -1
-    md = batch_d["motion"] != -1
+    """Mean-teacher consistency: pull the DRIFT prediction toward the (detached)
+    CLEAN prediction on the aligned reference voxels. Asymmetric + detached
+    teacher removes the degenerate 'predict a constant' solution that symmetric
+    KL allows, and a manual mean (not batchmean) stays finite when a batch has
+    zero supervised voxels -> returns 0 instead of dividing by ~0 -> no NaN.
+    """
+    dev = out_c["motion_logits"].device
+    mc = (batch_c["motion"] != -1)
+    md = (batch_d["motion"] != -1)
     cc = batch_c["coords"][mc]      # [b, x, y, z, t] of supervised voxels
     cd = batch_d["coords"][md]
     if cc.shape != cd.shape or not torch.equal(cc, cd):
         raise RuntimeError("clean/drift reference voxels misaligned -- "
                            "was augmentation or injection enabled?")
-    return consistency_loss(out_c["motion_logits"][mc.to(out_c["motion_logits"].device)],
-                            out_d["motion_logits"][md.to(out_d["motion_logits"].device)])
+    n = int(mc.sum())
+    if n == 0:
+        return out_c["motion_logits"].sum() * 0.0    # keep graph, contribute 0
+    lc = out_c["motion_logits"][mc.to(dev)]
+    ld = out_d["motion_logits"][md.to(dev)]
+    p_clean = torch.softmax(lc, dim=1).detach()      # teacher: stop-gradient
+    logq_drift = torch.log_softmax(ld, dim=1)        # student
+    # KL(clean || drift) averaged over voxels; finite for any n >= 1
+    return -(p_clean * logq_drift).sum(1).mean() - (
+            -(p_clean * torch.log(p_clean.clamp_min(1e-8))).sum(1).mean())
 
 
 def validate(model, loader, dev, num_sem):
@@ -145,10 +159,12 @@ def main():
     max_iters = args.iters or t["iters"]
     warmup = t.get("warmup_iters", 300)
     val_every = t.get("val_every", 500)
-    cw = L.get("consistency_weight", 1.0)
-    dsw = L.get("drift_sup_weight", 1.0)
+    cw = L.get("consistency_weight", 0.1)
+    dsw = L.get("drift_sup_weight", 0.0)
+    con_ramp = L.get("consistency_ramp_iters", 2000)
+    grad_clip = t.get("grad_clip", 1.0)
 
-    it, best_iou = 0, -1.0
+    it, best_iou, skipped = 0, -1.0, 0
     model.train()
     while it < max_iters:
         for pair in loader:
@@ -159,18 +175,31 @@ def main():
             bc, bd = pair["clean"], pair["drift"]
             out_c = model(to_st(bc, dev))
             out_d = model(to_st(bd, dev))
+            # clean pass supervised normally (anchors accuracy near the init);
+            # drift pass is NOT directly supervised (predicting motion from
+            # registration-corrupted input is ill-posed) -- it only receives the
+            # consistency pull toward the detached clean teacher.
             l_c, parts = total_loss(out_c, bc["motion"].to(dev),
                                     bc["semantic"].to(dev), L)
-            l_d, _ = total_loss(out_d, bd["motion"].to(dev),
-                                bd["semantic"].to(dev), L)
+            l_d = (dsw * total_loss(out_d, bd["motion"].to(dev),
+                                    bd["semantic"].to(dev), L)[0]
+                   if dsw > 0 else out_d["motion_logits"].sum() * 0.0)
             l_con = masked_consistency(out_c, out_d, bc, bd)
-            loss = l_c + dsw * l_d + cw * l_con
-            opt.zero_grad(); loss.backward(); opt.step()
+            # ramp consistency in over the first `con_ramp` iters so it can't
+            # dominate before the fine-tune settles.
+            cw_eff = cw * min(1.0, it / max(1, con_ramp))
+            loss = l_c + l_d + cw_eff * l_con
+            opt.zero_grad(); loss.backward()
+            gn = torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+            if torch.isfinite(gn):
+                opt.step()
+            else:
+                skipped += 1        # drop non-finite steps instead of poisoning weights
             if it % 50 == 0:
                 print(f"[iter {it}] lr={opt.param_groups[0]['lr']:.2e} "
                       f"loss={loss.item():.3f} clean={l_c.item():.3f} "
-                      f"drift={l_d.item():.3f} consist={l_con.item():.4f}",
-                      flush=True)
+                      f"drift={float(l_d):.3f} consist={l_con.item():.4f} "
+                      f"gnorm={float(gn):.2f} skip={skipped}", flush=True)
             it += 1
             if it % val_every == 0 or it >= max_iters:
                 v = validate(model, val_loader, dev, num_sem)

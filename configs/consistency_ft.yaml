@@ -26,16 +26,18 @@ pose_drift:            # training-time drift injected into the paired pass
 train:
   batch_size: 1        # two forward passes per step; keep memory in check
   iters: 10000
-  lr: 0.0002           # fine-tune LR (~5x below scratch)
+  lr: 0.00005          # fine-tune LR (~20x below scratch; 2e-4 diverged to NaN)
   weight_decay: 0.0001
-  warmup_iters: 300
+  warmup_iters: 500
   val_every: 500
   num_workers: 8
+  grad_clip: 1.0       # clip grad-norm; non-finite steps are skipped
 loss:
   motion_weight: 1.0
   semantic_weight: 1.0
   dice_weight: 1.0
-  moving_class_weight: 2.5
-  consistency_weight: 1.0
-  drift_sup_weight: 1.0
+  moving_class_weight: 2.5     # matched to the inject2 base
+  consistency_weight: 0.1      # mean-teacher pull; ramped in over con_ramp iters
+  consistency_ramp_iters: 2000
+  drift_sup_weight: 0.0        # do NOT supervise motion on drift-corrupted input
 model: {}

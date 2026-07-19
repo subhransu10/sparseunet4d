@@ -38,7 +38,7 @@ def main():
         d["voxel_size"], d["semantic_yaml"], "gt", 0.0, 0.0, p["seed"],
         d["point_range"],
         residual_feats=d.get("residual_feats", True),
-        res_clip=d.get("res_clip", 3.0), frame_offsets=d.get("frame_offsets"))
+        res_clip=d.get("res_clip", 3.0), frame_offsets=d.get("frame_offsets"), feat_rep=d.get("feat_rep", "label"))
     loader = DataLoader(ds, batch_size=cfg["train"]["batch_size"], shuffle=False,
                         collate_fn=me_collate, num_workers=4)
 

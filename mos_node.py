@@ -26,13 +26,26 @@ CPU-heavy and runs in a worker thread; inference runs on GPU. With
 scans rather than falling behind (correct behaviour for a robot: fresh
 predictions beat complete ones).
 
-Run:
+Run (current best model — strided 5-frame window [1,2,4,8]):
   SU4D_BACKEND=me PYTHONPATH=$HOME/MinkowskiEngine:$HOME/sparseunet4d \
   ros2 run <pkg> mos_node --ros-args \
-    -p config:=$HOME/sparseunet4d/configs/residual_v2.yaml \
-    -p ckpt:=$HOME/sparseunet4d/runs/residual_v2/best.pt \
+    -p config:=$HOME/sparseunet4d/configs/residual_inject.yaml \
+    -p ckpt:=$HOME/sparseunet4d/runs/residual_inject2/best.pt \
     -p propagate:=true \
     -r ~/points:=/velodyne_points -r ~/odom:=/odometry/lidar
+
+  For deployment under drifty online odometry, use the drift-robust checkpoint
+  instead:  -p ckpt:=$HOME/sparseunet4d/runs/consistency_ft/best.pt
+
+WARM-UP: the widest offset is 8, so the first ~8 scans (~0.8 s) produce
+partial-window predictions (missing offsets contribute zero residual) before
+the buffer is full. This is by design and matches early-in-sequence training.
+
+DOMAIN NOTE: the model is trained on 64-beam SemanticKITTI (HDL-64E). A Husky
+with a 16/32-beam LiDAR has very different point density and residual
+statistics -- expect a domain gap. For a real demo, either use a 64-beam
+sensor, or fine-tune on a little labelled robot data. The pipeline is correct
+regardless; accuracy transfer is the open question.
 """
 from __future__ import annotations
 import os, sys, threading, time

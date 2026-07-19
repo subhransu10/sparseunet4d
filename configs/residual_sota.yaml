@@ -1,0 +1,52 @@
+# residual_sota (sota-push run 1): everything proven + the capacity lever.
+#   proven recipe : strided window [1,2,4,8] + trajectory-consistent injection
+#                   (0.4 / 2 / class-weight 2.5)  -> 0.690 voxel / 0.713 point
+#   new here      : feat_rep 'residual'  (label-free voxel representative ->
+#                   train/inference identical; closes the robot-path gap)
+#                   base 64 / 3 stages   (the deliberately-skipped big lever)
+#                   70k iters, warmup 1500, accum 2 (batch 1 x 2 = eff. 2)
+# Expected wall time on the 5090: ~30-40 h. Resumable via --resume last.pt.
+dataset:
+  root: /mnt/d/Subhransu workspace/Dataset/my_kitti_dataset/dataset/sequences
+  semantic_yaml: /mnt/d/Subhransu workspace/Dataset/my_kitti_dataset/dataset/sequences/semantic-kitti.yaml
+  train_sequences: [0, 1, 2, 3, 4, 5, 6, 7, 9, 10]
+  val_sequences: [8]
+  n_frames: 5
+  frame_offsets: [1, 2, 4, 8]
+  voxel_size: 0.1
+  point_range: 51.2
+  residual_feats: true
+  res_clip: 3.0
+  feat_rep: residual          # label-free representative (train == inference)
+  augment: false
+  inject_bank: /home/suba/sparseunet4d/mover_bank.npy
+  inject_prob: 0.4
+  inject_max_n: 2
+pose:
+  mode: gt
+  rot_std_deg: 0.0
+  trans_std_m: 0.0
+  seed: 0
+train:
+  batch_size: 1               # base64/3-stage x 5 frames: keep memory safe
+  accum_steps: 2              # effective batch 2 (matches previous runs)
+  iters: 70000
+  lr: 0.001
+  weight_decay: 0.0001
+  warmup_iters: 1500
+  val_every: 2000             # big-model val is slow; 35 vals over the run
+  patience: 8                 # early-stop after 8 non-improving vals (16k iters)
+  num_workers: 8
+loss:
+  motion_weight: 1.0
+  semantic_weight: 1.0
+  dice_weight: 1.0
+  moving_class_weight: 2.5
+  consistency_weight: 0.0
+robustness:
+  rot_std_deg_sweep: [0.0, 0.25, 0.5, 1.0, 2.0]
+  trans_std_m_sweep: [0.0, 0.05, 0.1, 0.2, 0.4]
+model:
+  base: 64
+  n_stages: 3
+  use_se: true

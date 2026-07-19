@@ -189,14 +189,14 @@ if __name__ == "__main__":
         residual_feats=d.get("residual_feats", True), res_clip=d.get("res_clip", 3.0),
         frame_offsets=d.get("frame_offsets"), augment=d.get("augment", False),
         inject_bank=d.get("inject_bank"), inject_prob=d.get("inject_prob", 0.0),
-        inject_max_n=d.get("inject_max_n", 4))
+        inject_max_n=d.get("inject_max_n", 4), feat_rep=d.get("feat_rep", "label"))
     train_loader = DataLoader(train_ds, batch_size=cfg["train"]["batch_size"],
         shuffle=True, collate_fn=me_collate, num_workers=nw,
         persistent_workers=(nw > 0), pin_memory=True)
     val_ds = SemanticKITTI4D(d["root"], d["val_sequences"], d["n_frames"],
         d["voxel_size"], d["semantic_yaml"], "gt", 0.0, 0.0, p["seed"], d["point_range"],
         residual_feats=d.get("residual_feats", True), res_clip=d.get("res_clip", 3.0),
-        frame_offsets=d.get("frame_offsets"))
+        frame_offsets=d.get("frame_offsets"), feat_rep=d.get("feat_rep", "label"))
     val_loader = DataLoader(val_ds, batch_size=cfg["train"]["batch_size"],
         shuffle=False, collate_fn=me_collate, num_workers=nw,
         persistent_workers=(nw > 0), pin_memory=True)
