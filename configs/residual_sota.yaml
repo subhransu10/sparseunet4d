@@ -17,7 +17,7 @@ dataset:
   point_range: 51.2
   residual_feats: true
   res_clip: 3.0
-  feat_rep: residual          # label-free representative (train == inference)
+  feat_rep: label
   augment: false
   inject_bank: /home/suba/sparseunet4d/mover_bank.npy
   inject_prob: 0.4

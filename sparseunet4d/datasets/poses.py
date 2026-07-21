@@ -130,6 +130,43 @@ class DriftyPoseProvider:
         return T @ _se3_exp(xi)          # error in the SOURCE sensor frame
 
 
+class FilePoseProvider:
+    """Poses from a KITTI-format poses file (12 floats per row, 3x4 row-major).
+
+    Covers two paper-critical sources with one class:
+      - real odometry (e.g. KISS-ICP output)  -> IoU under REAL pose error
+      - pre-generated drifted trajectories (make_drifted_poses.py) -> the SAME
+        corrupted poses can be fed to external baselines (4DMOS), so ours and
+        theirs are compared under IDENTICAL noise.
+
+    frame='camera' (KITTI convention: poses of the left camera; pass calib to
+    convert to velodyne, exactly like GTPoseProvider) or frame='velodyne'
+    (file already in the sensor frame; no conversion).
+    """
+
+    def __init__(self, poses_path: str, frame: str = "camera",
+                 calib_path: str | None = None):
+        raw = _read_poses(poses_path)
+        if frame == "camera":
+            assert calib_path, "camera-frame pose file needs calib.txt (Tr)"
+            Tr = _read_calib_Tr(calib_path)
+            Tr_inv = np.linalg.inv(Tr)
+            self.poses = np.einsum("ij,fjk,kl->fil", Tr_inv, raw, Tr)
+        elif frame == "velodyne":
+            self.poses = raw
+        else:
+            raise ValueError(f"unknown frame: {frame}")
+
+    def __len__(self):
+        return len(self.poses)
+
+    def pose(self, frame_idx: int) -> np.ndarray:
+        return self.poses[frame_idx]
+
+    def relative(self, src_idx: int, ref_idx: int) -> np.ndarray:
+        return np.linalg.inv(self.poses[ref_idx]) @ self.poses[src_idx]
+
+
 def build_pose_provider(seq_dir: str, mode: str = "gt",
                         rot_std_deg: float = 0.0, trans_std_m: float = 0.0,
                         seed: int = 0):

@@ -11,3 +11,9 @@ __pycache__/
 *Zone.Identifier
 mover_bank*.npy
 runs/**/last.pt
+drift_kitti_08/
+drifted_poses_08/
+kitti16/
+results/
+*.pt
+mover_bank*.npy
