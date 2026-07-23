@@ -188,9 +188,18 @@ class MOSNode(Node):
     # ---------------- IO ---------------------------------------------------
     @staticmethod
     def _read_xyzi(msg):
-        a = pc2.read_points_numpy(
-            msg, field_names=("x", "y", "z", "intensity"), skip_nans=False)
-        return np.asarray(a, np.float32).reshape(-1, 4)
+        names = [f.name for f in msg.fields]
+        want = ("x", "y", "z", "intensity") if "intensity" in names else ("x", "y", "z")
+        a = pc2.read_points(msg, field_names=want, skip_nans=False)
+        a = np.asarray(a).reshape(-1)
+        n = int(a.shape[0])
+        out = np.zeros((n, 4), np.float32)
+        out[:, 0] = np.asarray(a["x"], np.float32)
+        out[:, 1] = np.asarray(a["y"], np.float32)
+        out[:, 2] = np.asarray(a["z"], np.float32)
+        if "intensity" in want:
+            out[:, 3] = np.asarray(a["intensity"], np.float32)
+        return out
 
     def _publish(self, msg, scan, labels, probs):
         mv = labels.copy()
