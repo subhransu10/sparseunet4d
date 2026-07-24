@@ -71,6 +71,10 @@ export SU4D_REPO="$REPO"
 EOF
 echo "    created $HOME/activate_mos.sh"
 
+echo "==> fetching pretrained checkpoint from GitHub release"
+bash "$SCRIPT_DIR/download_model.sh" || \
+  echo "    (download failed; fetch it manually — see deploy/DEPLOY_VENV.md)"
+
 echo
 echo "==> verify"
 # shellcheck disable=SC1091
@@ -85,7 +89,7 @@ PY
 echo
 echo "======================================================================="
 echo " DONE.  Next:"
-echo "   1) copy the checkpoint:  $REPO/runs/consistency_ft/best.pt"
-echo "   2) every session:        source ~/activate_mos.sh"
-echo "   3) see deploy/DEPLOY_VENV.md for KITTI / Husky-sim / real-robot runs"
+echo "   1) every session:        source ~/activate_mos.sh"
+echo "   2) see deploy/DEPLOY_VENV.md for KITTI / Husky-sim / real-robot runs"
+echo "   (checkpoint auto-downloaded to runs/consistency_ft/best.pt)"
 echo "======================================================================="

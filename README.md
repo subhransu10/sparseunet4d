@@ -6,7 +6,6 @@ alongside an existing **ROS 2 Humble** install, **without conda** and **without
 breaking** the system Python or ROS. All ML dependencies live in one throwaway
 venv; only a single, removable system package (`nvidia-cuda-toolkit`) is added.
 
-Trained on: **Ubuntu 22.04**, **RTX 5090 Workstation (64 GB VRAM)**,
 Verified on: **Ubuntu 22.04**, **RTX 3050 Ti Laptop (4 GB VRAM, Ampere sm_86)**,
 system **Python 3.10.12**, NVIDIA driver present, ROS 2 Humble present.
 
