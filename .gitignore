@@ -17,3 +17,7 @@ kitti16/
 results/
 *.pt
 mover_bank*.npy
+
+# checkpoints & logs
+*.pt
+runs/*.log

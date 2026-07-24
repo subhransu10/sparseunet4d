@@ -6,8 +6,8 @@ alongside an existing **ROS 2 Humble** install, **without conda** and **without
 breaking** the system Python or ROS. All ML dependencies live in one throwaway
 venv; only a single, removable system package (`nvidia-cuda-toolkit`) is added.
 
-Trained  on: **Ubuntu 22.04**, **RTX 5090 Workstation (64 GB VRAM)**,
-Verified on: **Ubuntu 22.04**, **RTX 3050 Ti Laptop (4 GB VRAM)**,
+Trained on: **Ubuntu 22.04**, **RTX 5090 Workstation (64 GB VRAM)**,
+Verified on: **Ubuntu 22.04**, **RTX 3050 Ti Laptop (4 GB VRAM, Ampere sm_86)**,
 system **Python 3.10.12**, NVIDIA driver present, ROS 2 Humble present.
 
 ---
@@ -32,6 +32,22 @@ Nothing overwrites a system library. ROS 2 and Husky keep importing from
 Prereqs: `nvidia-smi` prints your GPU; `/opt/ros/humble/setup.bash` exists;
 `python3.10 --version` is 3.10 (this is what ROS `rclpy` is built against — the
 venv **must** come from it).
+
+### Quick path (recommended) — one command
+
+```bash
+git clone -b sota-push https://github.com/subhransu10/sparseunet4d ~/sparseunet4d
+cd ~/sparseunet4d
+bash deploy/setup_venv.sh          # installs everything into ~/mos_venv (~20 min)
+#   then make sure that the checkpoint is present in runs/consistency_ft/best.pt (scp or USB)
+```
+`setup_venv.sh` is idempotent (safe to re-run), auto-detects your GPU's compute
+capability, builds MinkowskiEngine with `MAX_JOBS=1` (no laptop OOM-freeze), and
+writes `~/activate_mos.sh` — source that before every run (§3). If it finishes
+cleanly you can skip to §4. The manual steps below are the same thing, spelled
+out, if you prefer to run them yourself or the script fails partway.
+
+### Manual steps (what the script does)
 
 ```bash
 # 2.1 system packages (additive, removable, do NOT touch ROS/driver)
@@ -85,6 +101,11 @@ quaternion guard, pose–scan time synchronization, and the configurable
 
 ## 3. Launch preamble — run in EVERY node terminal
 
+`setup_venv.sh` generated this helper — just source it (it does all three lines):
+```bash
+source ~/activate_mos.sh
+```
+Equivalent to:
 ```bash
 source /opt/ros/humble/setup.bash
 source ~/mos_venv/bin/activate
