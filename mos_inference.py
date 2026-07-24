@@ -74,6 +74,9 @@ class MOSInference:
             use_ego_decouple=m.get("use_ego_decouple", False)
         ).to(device).eval()
         ck = torch.load(ckpt_path, map_location=device)
+        self.threshold = float(os.environ.get('SU4D_THRESHOLD',
+            ck.get('best_threshold', 0.5) if isinstance(ck, dict) else 0.5))
+        print('[MOSInference] moving threshold =', self.threshold)
         missing, unexpected = self.model.load_state_dict(
             ck["model"] if "model" in ck else ck, strict=False)
         assert all(k.startswith("offset_head") for k in missing), missing
@@ -208,7 +211,7 @@ class MOSInference:
 
         labels = np.full(n_ref, IGNORE, np.int8)
         probs = np.zeros(n_ref, np.float32)
-        labels[keep_ref] = (p_prob >= 0.5).astype(np.int8)
+        labels[keep_ref] = (p_prob >= self.threshold).astype(np.int8)
         probs[keep_ref] = p_prob
         return labels, probs
 

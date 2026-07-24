@@ -66,6 +66,8 @@ MAX_REL_T = 0.05          # m, per-window budget from the drift sweep
 
 def quat_to_R(x, y, z, w):
     n = np.sqrt(x*x + y*y + z*z + w*w)
+    if not np.isfinite(n) or n < 1e-8:
+        return np.eye(3)          # degenerate/uninitialised quaternion
     x, y, z, w = x/n, y/n, z/n, w/n
     return np.array([
         [1-2*(y*y+z*z), 2*(x*y-z*w),   2*(x*z+y*w)],
@@ -110,6 +112,7 @@ class MOSNode(Node):
         self.pub_mov = self.create_publisher(PointCloud2, "~/points_moving", 1)
 
         self._odom = None                 # latest (stamp_ns, T 4x4)
+        self._odom_buf = []               # [(stamp_ns, pos3, quat4)] time-sync
         self._pending = None              # newest unprocessed (msg, T)
         self._lock = threading.Lock()
         self._prev_T = None
@@ -124,10 +127,14 @@ class MOSNode(Node):
     def on_odom(self, msg: Odometry):
         p = msg.pose.pose.position
         q = msg.pose.pose.orientation
+        stamp = msg.header.stamp.sec * 10**9 + msg.header.stamp.nanosec
+        self._odom_buf.append((stamp, np.array([p.x, p.y, p.z]),
+                               np.array([q.x, q.y, q.z, q.w])))
+        if len(self._odom_buf) > 300:
+            self._odom_buf.pop(0)
         T = np.eye(4)
         T[:3, :3] = quat_to_R(q.x, q.y, q.z, q.w)
         T[:3, 3] = [p.x, p.y, p.z]
-        stamp = msg.header.stamp.sec * 10**9 + msg.header.stamp.nanosec
         self._odom = (stamp, T)
 
     def on_cloud(self, msg: PointCloud2):
@@ -143,13 +150,48 @@ class MOSNode(Node):
             self._process(msg, T)
 
     # ---------------- pose ------------------------------------------------
+    @staticmethod
+    def _slerp(q0, q1, u):
+        d = float(np.dot(q0, q1))
+        if d < 0.0:
+            q1 = -q1; d = -d
+        if d > 0.9995:
+            q = q0 + u * (q1 - q0)
+            return q / np.linalg.norm(q)
+        th = np.arccos(d); si = np.sin(th)
+        return (np.sin((1 - u) * th) * q0 + np.sin(u * th) * q1) / si
+
+    def _pose_at(self, stamp):
+        buf = self._odom_buf
+        if not buf:
+            return None
+        if stamp <= buf[0][0]:
+            _, p, q = buf[0]
+        elif stamp >= buf[-1][0]:
+            _, p, q = buf[-1]
+        else:
+            p = q = None
+            for i in range(1, len(buf)):
+                if buf[i][0] >= stamp:
+                    s0, p0, q0 = buf[i - 1]
+                    s1, p1, q1 = buf[i]
+                    u = (stamp - s0) / max(s1 - s0, 1)
+                    p = p0 + u * (p1 - p0)
+                    q = self._slerp(q0, q1, u)
+                    break
+        T = np.eye(4)
+        T[:3, :3] = quat_to_R(q[0], q[1], q[2], q[3])
+        T[:3, 3] = p
+        return T
+
     def _pose_for(self, msg):
         if self.icp is not None:
             xyz = self._read_xyzi(msg)[:, :3].astype(np.float64)
             self.icp.register_frame(xyz, np.zeros(len(xyz)))
             T = np.asarray(self.icp.last_pose)
-        elif self._odom is not None:
-            T = self._odom[1]
+        elif self._odom_buf:
+            stamp = msg.header.stamp.sec * 10**9 + msg.header.stamp.nanosec
+            T = self._pose_at(stamp)      # pose interpolated to THIS scan's time
         else:
             return None
         if self._prev_T is not None:
@@ -199,10 +241,10 @@ class MOSNode(Node):
         out[:, 2] = np.asarray(a["z"], np.float32)
         if "intensity" in want:
             out[:, 3] = np.asarray(a["intensity"], np.float32)
-        return out
+        return out[np.isfinite(out).all(axis=1)]   # drop no-return NaN/inf rays
 
     def _publish(self, msg, scan, labels, probs):
-        mv = labels.copy()
+        mv = labels.astype(np.int16)
         mv[mv < 0] = 255                       # out-of-range clip
         rec = np.zeros(len(scan), dtype=[
             ("x", np.float32), ("y", np.float32), ("z", np.float32),
