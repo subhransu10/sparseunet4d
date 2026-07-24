@@ -38,7 +38,7 @@ venv **must** come from it).
 git clone -b sota-push https://github.com/subhransu10/sparseunet4d ~/sparseunet4d
 cd ~/sparseunet4d
 bash deploy/setup_venv.sh          # installs everything into ~/mos_venv (~20 min)
-#   then copy the checkpoint into runs/consistency_ft/best.pt (scp or USB)
+#   then make sure that the checkpoint is present in runs/consistency_ft/best.pt (scp or USB)
 ```
 `setup_venv.sh` is idempotent (safe to re-run), auto-detects your GPU's compute
 capability, builds MinkowskiEngine with `MAX_JOBS=1` (no laptop OOM-freeze), and
