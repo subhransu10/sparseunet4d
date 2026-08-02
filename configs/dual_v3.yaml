@@ -1,0 +1,51 @@
+# residual_inject: trajectory-consistent moving-instance injection on top of
+# the strided temporal window (your best recipe). Attacks the diagnosed wall:
+# 55% of misses are whole silent movers -> synthesize MORE movers, with real
+# multi-frame trajectories, so the residual channels see genuine motion
+# signatures at training density far above the natural class balance.
+# Geometric augment stays OFF (measured -0.005 on same-domain val).
+dataset:
+  root: /mnt/d/Subhransu workspace/Dataset/my_kitti_dataset/dataset/sequences
+  semantic_yaml: /mnt/d/Subhransu workspace/Dataset/my_kitti_dataset/dataset/sequences/semantic-kitti.yaml
+  train_sequences: [0, 1, 2, 3, 4, 5, 6, 7, 9, 10]
+  val_sequences: [8]
+  n_frames: 5
+  frame_offsets: [1, 2, 4, 8]
+  voxel_size: 0.1
+  point_range: 51.2
+  residual_feats: true
+  res_clip: 3.0
+  augment: false
+  inject_bank: /home/suba/sparseunet4d/mover_bank.npy    # from build_instance_bank.py (path or absolute)
+  inject_prob: 0.4
+  inject_max_n: 2
+  all_frame_labels: true      # <-- the only change vs dual_v1
+pose:
+  mode: gt
+  rot_std_deg: 0.0
+  trans_std_m: 0.0
+  seed: 0
+train:
+  batch_size: 2
+  iters: 40000
+  lr: 0.001
+  weight_decay: 0.0001
+  val_every: 1000
+loss:
+  motion_weight: 1.0
+  semantic_weight: 1.0
+  dice_weight: 1.0
+  moving_class_weight: 2.5
+  consistency_weight: 0.0
+  cluster_weight: 0.5
+robustness:
+  rot_std_deg_sweep: [0.0, 0.25, 0.5, 1.0, 2.0]
+  trans_std_m_sweep: [0.0, 0.05, 0.1, 0.2, 0.4]
+model:
+  use_cluster: true
+  cluster_link: 2
+  cluster_min_size: 3
+  cluster_cross_frame: false        
+  cluster_feature_fusion: true
+  dual_branch: true        # <-- the only change vs cluster_v3
+  app_ch: 1 

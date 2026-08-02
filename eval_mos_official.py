@@ -75,9 +75,9 @@ def main():
     n_frames = d.get("n_frames", 4)
     residual_feats = d.get("residual_feats", True)
     in_ch = 1 + (n_frames - 1) if residual_feats else 1
-    model = SparseUNet4D(in_ch, d.get("num_semantic", 20), base=m.get("base", 32),
-        n_stages=m.get("n_stages", 2), use_se=m.get("use_se", True),
-        use_ego_decouple=m.get("use_ego_decouple", False)).to(dev).eval()
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from scripts.train import build_model
+    model = build_model(m, in_ch, d.get("num_semantic", 20)).to(dev).eval()
     ck = torch.load(args.ckpt, map_location=dev)
     model.load_state_dict(ck["model"] if "model" in ck else ck, strict=False)
 

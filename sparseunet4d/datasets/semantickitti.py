@@ -102,7 +102,7 @@ class SemanticKITTI4D(Dataset):
                  augment=False, aug_scale=(0.95, 1.05), aug_rot_deg=180.0,
                  fixed_transform=None,
                  inject_bank=None, inject_prob=0.0, inject_max_n=4,
-                 feat_rep="label"):
+                 feat_rep="label", all_frame_labels=False):
         """
         root:        .../sequences
         sequences:   list of int (e.g. list(range(11)) for train/val)
@@ -123,6 +123,9 @@ class SemanticKITTI4D(Dataset):
         self.residual_feats = residual_feats
         self.res_clip = res_clip
         self.return_point_map = return_point_map
+        # P3: supervise EVERY frame in the window (train only), not just t=0.
+        # Each past frame uses its own .label file -> ~5x denser gradient.
+        self.all_frame_labels = all_frame_labels
         # Temporal offsets into the past (t index 0 == reference, offset 0).
         # Strided offsets (e.g. [1, 2, 4, 8]) widen the window so slow / nearby
         # movers displace enough between scans to leave a residual signal.
@@ -320,8 +323,9 @@ class SemanticKITTI4D(Dataset):
             else:
                 m = np.ones(len(xyz), dtype=bool)
 
-            # labels: supervise only the reference frame
-            if t_idx == 0 and os.path.exists(lab_p):
+            # labels: reference frame always; past frames too under P3
+            # (all_frame_labels) -- each from its OWN label file.
+            if (t_idx == 0 or self.all_frame_labels) and os.path.exists(lab_p):
                 sem_raw, inst_raw = split_label(_read_label(lab_p))   # keep inst now
                 sem_raw = sem_raw[m]
                 inst_raw = inst_raw[m]                                # clip same mask
@@ -329,7 +333,13 @@ class SemanticKITTI4D(Dataset):
                 sem = (to_semantic_labels(sem_raw, self.lut)
                        if self.lut is not None
                        else np.full(len(sem_raw), IGNORE_INDEX))
-                off, omask = _gt_offsets_panoptic(xyz, sem_raw, inst_raw)
+                if t_idx == 0:
+                    # offset head stays reference-only (its target is the
+                    # reference-frame instance centre)
+                    off, omask = _gt_offsets_panoptic(xyz, sem_raw, inst_raw)
+                else:
+                    off = np.zeros((len(xyz), 3), np.float32)
+                    omask = np.zeros(len(xyz), bool)
             else:
                 mot = np.full(len(xyz), IGNORE_INDEX, dtype=np.int64)
                 sem = np.full(len(xyz), IGNORE_INDEX, dtype=np.int64)

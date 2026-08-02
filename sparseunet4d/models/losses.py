@@ -69,7 +69,34 @@ def total_loss(out, motion_labels, semantic_labels, cfg,
         l_off = offset_l1(out["offset_pred"], offset_gt, offset_mask)
         loss = loss + cfg["offset_weight"] * l_off
         parts["offset"] = l_off.item()
+    if cfg.get("cluster_weight", 0.0) > 0 and out.get("cluster_logits") is not None:
+        l_clu = cluster_moving_loss(out.get("cluster_logits"),
+                                    out.get("cluster_row_id"), motion_labels)
+        if l_clu is not None:
+            loss = loss + cfg["cluster_weight"] * l_clu
+            parts["cluster"] = l_clu.item()
     return loss, parts
+
+
+def cluster_moving_loss(cluster_logits, cluster_row_id, motion_labels):
+    """BCE on the per-cluster moving score. Target = majority-moving of the
+    cluster's supervised member voxels. Clusters with no supervised voxel are
+    skipped. Aligns with the per-voxel motion labels (same row order)."""
+    if cluster_logits is None or cluster_logits.numel() == 0:
+        return None
+    G = cluster_logits.shape[0]
+    dev = cluster_logits.device
+    valid = cluster_row_id >= 0
+    ids = cluster_row_id[valid]
+    lab = (motion_labels[valid] == 1).float()
+    sup = (motion_labels[valid] != IGNORE_INDEX).float()
+    pos = torch.zeros(G, device=dev).index_add_(0, ids, lab * sup)
+    cnt = torch.zeros(G, device=dev).index_add_(0, ids, sup)
+    has = cnt > 0
+    if has.sum() == 0:
+        return None
+    target = (pos[has] / cnt[has].clamp(min=1.0) > 0.5).float()
+    return F.binary_cross_entropy_with_logits(cluster_logits[has], target)
 
 def tversky_moving(logits, labels, alpha=0.3, beta=0.7, eps=1.0):
     """Tversky on moving class (idx 1), ref voxels only. beta>alpha favours RECALL."""

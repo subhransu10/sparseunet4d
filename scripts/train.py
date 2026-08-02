@@ -25,6 +25,29 @@ from sparseunet4d.models.losses import total_loss
 from sparseunet4d.utils.metrics import IoUMeter, MovingThresholdMeter
 
 
+
+def build_model(cfg_model, in_ch, num_sem):
+    """SparseUNet4D, or the decoupled motion/appearance DualBranchUNet4D when
+    model.dual_branch is set. Same heads + cluster head either way."""
+    m = cfg_model
+    common = dict(use_cluster=m.get("use_cluster", False),
+                  cluster_link=m.get("cluster_link", 2),
+                  cluster_min_size=m.get("cluster_min_size", 3),
+                  cluster_cross_frame=m.get("cluster_cross_frame", False),
+                  cluster_feature_fusion=m.get("cluster_feature_fusion", False))
+    if m.get("dual_branch", False):
+        from sparseunet4d.models.dual_branch import DualBranchUNet4D
+        return DualBranchUNet4D(in_ch, num_sem, base=m.get("base", 32),
+                                n_stages=m.get("n_stages", 2),
+                                use_se=m.get("use_se", True),
+                                app_ch=m.get("app_ch", 1), **common)
+    return SparseUNet4D(in_ch, num_sem, base=m.get("base", 32),
+                        n_stages=m.get("n_stages", 2),
+                        use_se=m.get("use_se", True),
+                        use_ego_decouple=m.get("use_ego_decouple", False),
+                        **common)
+
+
 def to_st(batch, device):
     coords = batch["coords"].to(device); feats = batch["feats"].to(device)
     if backend() == "me":
@@ -86,10 +109,7 @@ def train(cfg, train_loader, val_loader=None, device="cpu", drift_loader=None,
     n_frames = d.get("n_frames", 4)                     # d = dataset config section
     residual_feats = d.get("residual_feats", True)
     in_ch = 1 + (n_frames - 1) if residual_feats else 1
-    model = SparseUNet4D(
-        in_ch=in_ch, num_semantic=num_sem, base=m.get("base", 32),
-        n_stages=m.get("n_stages", 2), use_se=m.get("use_se", True),
-        use_ego_decouple=m.get("use_ego_decouple", False)).to(device)
+    model = build_model(m, in_ch, num_sem).to(device)
     base_lr = cfg["train"]["lr"]
     opt = torch.optim.AdamW(model.parameters(), lr=base_lr,
                             weight_decay=cfg["train"]["weight_decay"])
@@ -189,7 +209,8 @@ if __name__ == "__main__":
         residual_feats=d.get("residual_feats", True), res_clip=d.get("res_clip", 3.0),
         frame_offsets=d.get("frame_offsets"), augment=d.get("augment", False),
         inject_bank=d.get("inject_bank"), inject_prob=d.get("inject_prob", 0.0),
-        inject_max_n=d.get("inject_max_n", 4), feat_rep=d.get("feat_rep", "label"))
+        inject_max_n=d.get("inject_max_n", 4), feat_rep=d.get("feat_rep", "label"),
+        all_frame_labels=d.get("all_frame_labels", False))   # P3: train only
     train_loader = DataLoader(train_ds, batch_size=cfg["train"]["batch_size"],
         shuffle=True, collate_fn=me_collate, num_workers=nw,
         persistent_workers=(nw > 0), pin_memory=True)

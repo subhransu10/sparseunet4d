@@ -10,6 +10,7 @@ import torch.nn as nn
 from .backend import (SparseConv, SparseConvTranspose, SparseBN, SparseReLU,
                       global_avg_pool_per_batch, broadcast_scale, cat_features,
                       backend)
+from .cluster_head import ClusterConsistencyHead
 
 
 class SEModule(nn.Module):
@@ -44,7 +45,9 @@ class SEResBlock4D(nn.Module):
 
 class SparseUNet4D(nn.Module):
     def __init__(self, in_ch=1, num_semantic=20, base=32, n_stages=2, use_se=True,
-                 use_ego_decouple=False):
+                 use_ego_decouple=False, use_cluster=False, cluster_link=2,
+                 cluster_min_size=3, cluster_cross_frame=False,
+                 cluster_feature_fusion=False):
         super().__init__()
         self.n_stages = n_stages
         widths = [base * (2 ** i) for i in range(n_stages + 1)]   # w0..w_n
@@ -61,6 +64,13 @@ class SparseUNet4D(nn.Module):
         self.offset_head = nn.Sequential(
             nn.Linear(widths[0], widths[0]), nn.ReLU(inplace=True),
             nn.Linear(widths[0], 3))          # private 2-layer MLP
+        self.cluster = (ClusterConsistencyHead(widths[0], cluster_link,
+                                               cluster_min_size, cluster_cross_frame,
+                                               cluster_feature_fusion)
+                        if use_cluster else None)
+        # SemanticKITTI movable (potentially-moving) learning ids 1..8
+        self.register_buffer("_movable", torch.tensor([1, 2, 3, 4, 5, 6, 7, 8]),
+                             persistent=False)
 
     def forward(self, x):
         s = [self.stem(x)]
@@ -71,9 +81,20 @@ class SparseUNet4D(nn.Module):
             h = self.ups[i](h, s[i])
             h = self.decoders[i](cat_features(h, s[i]))
         feats = h.feats if backend() != "me" else h.F
-        return {"motion_logits": self.motion_head(feats),
-                "semantic_logits": self.semantic_head(feats),
-                # offset is an auxiliary task: let its gradient shape the shared
-                # backbone (previously detached, so it could not help features).
-                "offset_pred": self.offset_head(feats),
-                "coords": h.coords if backend() != "me" else h.C}
+        coords = h.coords if backend() != "me" else h.C
+        motion_logits = self.motion_head(feats)
+        semantic_logits = self.semantic_head(feats)
+        out = {"motion_logits": motion_logits,
+               "semantic_logits": semantic_logits,
+               # offset is an auxiliary task: let its gradient shape the shared
+               # backbone (previously detached, so it could not help features).
+               "offset_pred": self.offset_head(feats),
+               "coords": coords}
+        if self.cluster is not None:
+            sem_arg = semantic_logits.argmax(1)
+            fg = torch.isin(sem_arg, self._movable.to(sem_arg.device))
+            fused, clog, rid = self.cluster(feats, coords, motion_logits, fg)
+            out["motion_logits"] = fused
+            out["cluster_logits"] = clog
+            out["cluster_row_id"] = rid
+        return out
