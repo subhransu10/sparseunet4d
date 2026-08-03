@@ -3,8 +3,8 @@
 # configs expect (runs/consistency_ft/best.pt). Verifies SHA-256; safe to re-run.
 set -euo pipefail
 
-URL="https://github.com/subhransu10/sparseunet4d/releases/download/v1.0/consistency_ft_best.pt"
-SHA="ee16661acb2590c3008af8705a053357a871401355782cbda85afb8da03f68b7"
+URL="https://github.com/subhransu10/sparseunet4d/releases/tag/v2.0"
+SHA="sha256:1852e83806c30ce1eae392c3105e051e8fcefb16c739f60cb4d362b70685a214"
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # deploy/ -> repo root
 DEST_DIR="$REPO/runs/consistency_ft"
