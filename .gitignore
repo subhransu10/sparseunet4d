@@ -21,3 +21,7 @@ mover_bank*.npy
 # checkpoints & logs
 *.pt
 runs/*.log
+
+# bak
+*.bak
+*.p?bak
