@@ -102,8 +102,7 @@ class SemanticKITTI4D(Dataset):
                  augment=False, aug_scale=(0.95, 1.05), aug_rot_deg=180.0,
                  fixed_transform=None,
                  inject_bank=None, inject_prob=0.0, inject_max_n=4,
-                 feat_rep="label", all_frame_labels=False,
-                 residual_validity=False):
+                 feat_rep="label", all_frame_labels=False):
         """
         root:        .../sequences
         sequences:   list of int (e.g. list(range(11)) for train/val)
@@ -127,9 +126,6 @@ class SemanticKITTI4D(Dataset):
         # P3: supervise EVERY frame in the window (train only), not just t=0.
         # Each past frame uses its own .label file -> ~5x denser gradient.
         self.all_frame_labels = all_frame_labels
-        # lever D: per-offset 'past pixel had a return' channel, so the net
-        # can tell 'no motion' from 'no observation'.
-        self.residual_validity = residual_validity
         # Temporal offsets into the past (t index 0 == reference, offset 0).
         # Strided offsets (e.g. [1, 2, 4, 8]) widen the window so slow / nearby
         # movers displace enough between scans to leave a residual signal.
@@ -386,10 +382,8 @@ class SemanticKITTI4D(Dataset):
             past_list = [past_by_off.get(o, np.zeros((0, 3), np.float32))
                          for o in self.offsets]
             R = residual_channels(frame_xyz[0], past_list,
-                                  normalize=False, clip=self.res_clip,
-                                  return_validity=self.residual_validity)
-            Kc = R.shape[1]                       # K, or 2K with validity
-            res_blocks = [R] + [np.zeros((len(frame_xyz[t]), Kc), np.float32)
+                                  normalize=False, clip=self.res_clip)  # (N_ref, K)
+            res_blocks = [R] + [np.zeros((len(frame_xyz[t]), K), np.float32)
                                for t in range(1, len(frame_xyz))]
             residuals = np.concatenate(res_blocks, 0)
             feats = np.concatenate([feats, residuals], axis=1)  # (total, 1+K)

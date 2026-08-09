@@ -60,7 +60,7 @@ def spherical_project(points, H=64, W=2048, fov_up_deg=3.0, fov_down_deg=-25.0):
 
 def residual_channels(points_now, past_scans_in_now,
                        H=64, W=2048, fov_up_deg=3.0, fov_down_deg=-25.0,
-                       normalize=True, clip=None, return_validity=False):
+                       normalize=True, clip=None):
     """
     points_now         : (N,3) current-frame points (sensor frame).
     past_scans_in_now  : list of (M_k,3) past scans ALREADY transformed into the
@@ -74,12 +74,7 @@ def residual_channels(points_now, past_scans_in_now,
     _, u_now, v_now, r_now, valid_now = spherical_project(
         points_now, H, W, fov_up_deg, fov_down_deg)
     N = points_now.shape[0]
-    K = len(past_scans_in_now)
-    feats = np.zeros((N, K), dtype=np.float32)
-    # validity: 1 = past pixel HAD a return (residual is real evidence),
-    # 0 = past pixel empty (newly occupied OR just sparse). Without this the
-    # two cases are indistinguishable, both encoded as residual 0.
-    valid_ch = np.zeros((N, K), dtype=np.float32)
+    feats = np.zeros((N, len(past_scans_in_now)), dtype=np.float32)
 
     for k, past in enumerate(past_scans_in_now):
         past_img, _, _, _, _ = spherical_project(
@@ -93,7 +88,4 @@ def residual_channels(points_now, past_scans_in_now,
         if clip is not None:
             res = np.clip(res, -clip, clip)
         feats[:, k] = res.astype(np.float32)
-        valid_ch[:, k] = has_past.astype(np.float32)
-    if return_validity:
-        return np.concatenate([feats, valid_ch], axis=1)      # (N, 2K)
     return feats

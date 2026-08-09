@@ -69,10 +69,6 @@ def total_loss(out, motion_labels, semantic_labels, cfg,
         l_off = offset_l1(out["offset_pred"], offset_gt, offset_mask)
         loss = loss + cfg["offset_weight"] * l_off
         parts["offset"] = l_off.item()
-    if cfg.get("lovasz_weight", 0.0) > 0:
-        l_lov = lovasz_softmax_moving(out["motion_logits"], motion_labels)
-        loss = loss + cfg["lovasz_weight"] * l_lov
-        parts["lovasz"] = l_lov.item()
     if cfg.get("cluster_weight", 0.0) > 0 and out.get("cluster_logits") is not None:
         l_clu = cluster_moving_loss(out.get("cluster_logits"),
                                     out.get("cluster_row_id"), motion_labels)
@@ -117,34 +113,3 @@ def offset_l1(offset_pred, offset_gt, offset_mask):
     if offset_mask.sum() == 0:
         return offset_pred.sum() * 0.0
     return F.l1_loss(offset_pred[offset_mask], offset_gt[offset_mask])
-
-
-def _lovasz_grad(gt_sorted):
-    """Gradient of the Lovasz extension of the Jaccard loss (Berman et al.)."""
-    p = len(gt_sorted)
-    gts = gt_sorted.sum()
-    intersection = gts - gt_sorted.float().cumsum(0)
-    union = gts + (1 - gt_sorted).float().cumsum(0)
-    jaccard = 1.0 - intersection / union.clamp(min=1e-6)
-    if p > 1:
-        jaccard[1:p] = jaccard[1:p] - jaccard[0:-1]
-    return jaccard
-
-
-def lovasz_softmax_moving(logits, labels):
-    """Lovasz-softmax on the MOVING class (index 1), reference voxels only.
-
-    Convex surrogate of (1 - IoU) -- optimizes the evaluation metric directly
-    rather than a proxy. Ignores IGNORE_INDEX voxels.
-    """
-    mask = labels != IGNORE_INDEX
-    if mask.sum() == 0:
-        return logits.sum() * 0.0
-    probs = torch.softmax(logits[mask], dim=1)[:, 1]
-    fg = (labels[mask] == 1).float()
-    if fg.sum() == 0:                      # no movers in this batch
-        return logits.sum() * 0.0
-    errors = (fg - probs).abs()
-    errors_sorted, perm = torch.sort(errors, dim=0, descending=True)
-    fg_sorted = fg[perm.detach()]
-    return torch.dot(errors_sorted, _lovasz_grad(fg_sorted))

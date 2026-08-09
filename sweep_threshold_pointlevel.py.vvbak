@@ -39,14 +39,12 @@ def main():
         d["voxel_size"], d["semantic_yaml"], "gt", 0.0, 0.0, p.get("seed", 0),
         d["point_range"], residual_feats=d.get("residual_feats", True),
         res_clip=d.get("res_clip", 3.0), return_point_map=True,
-        frame_offsets=d.get("frame_offsets"), feat_rep=d.get("feat_rep", "label"),
-        residual_validity=d.get("residual_validity", False))
+        frame_offsets=d.get("frame_offsets"), feat_rep=d.get("feat_rep", "label"))
     loader = DataLoader(ds, batch_size=cfg["train"]["batch_size"], shuffle=False,
                         collate_fn=me_collate, num_workers=4)
 
     n_frames = d.get("n_frames", 4)
-    _k = (n_frames - 1) * (2 if d.get("residual_validity", False) else 1)
-    in_ch = 1 + _k if d.get("residual_feats", True) else 1
+    in_ch = 1 + (n_frames - 1) if d.get("residual_feats", True) else 1
     sys.path.insert(0, os.path.expanduser("~/sparseunet4d"))
     from scripts.train import build_model
     model = build_model(m, in_ch, d.get("num_semantic", 20)).to(dev).eval()

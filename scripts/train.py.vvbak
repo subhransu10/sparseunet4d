@@ -34,9 +34,7 @@ def build_model(cfg_model, in_ch, num_sem):
                   cluster_link=m.get("cluster_link", 2),
                   cluster_min_size=m.get("cluster_min_size", 3),
                   cluster_cross_frame=m.get("cluster_cross_frame", False),
-                  cluster_feature_fusion=m.get("cluster_feature_fusion", False),
-                  cluster_fg_mode=m.get("cluster_fg_mode", "semantic"),
-                  cluster_fg_seed_th=m.get("cluster_fg_seed_th", 0.3))
+                  cluster_feature_fusion=m.get("cluster_feature_fusion", False))
     if m.get("dual_branch", False):
         from sparseunet4d.models.dual_branch import DualBranchUNet4D
         return DualBranchUNet4D(in_ch, num_sem, base=m.get("base", 32),
@@ -221,8 +219,7 @@ if __name__ == "__main__":
     val_ds = SemanticKITTI4D(d["root"], d["val_sequences"], d["n_frames"],
         d["voxel_size"], d["semantic_yaml"], "gt", 0.0, 0.0, p["seed"], d["point_range"],
         residual_feats=d.get("residual_feats", True), res_clip=d.get("res_clip", 3.0),
-        frame_offsets=d.get("frame_offsets"), feat_rep=d.get("feat_rep", "label"),
-        residual_validity=d.get("residual_validity", False))
+        frame_offsets=d.get("frame_offsets"), feat_rep=d.get("feat_rep", "label"))
     val_loader = DataLoader(val_ds, batch_size=cfg["train"]["batch_size"],
         shuffle=False, collate_fn=me_collate, num_workers=nw,
         persistent_workers=(nw > 0), pin_memory=True)

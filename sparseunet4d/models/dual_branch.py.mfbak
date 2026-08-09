@@ -43,8 +43,7 @@ def _split_channels(x, n_first):
 class DualBranchUNet4D(nn.Module):
     def __init__(self, in_ch=1, num_semantic=20, base=32, n_stages=2, use_se=True,
                  app_ch=1, use_cluster=False, cluster_link=2, cluster_min_size=3,
-                 cluster_cross_frame=False, cluster_feature_fusion=False,
-                 cluster_fg_mode="semantic", cluster_fg_seed_th=0.3):
+                 cluster_cross_frame=False, cluster_feature_fusion=False):
         super().__init__()
         self.n_stages = n_stages
         self.app_ch = app_ch                      # appearance channels (remission)
@@ -74,8 +73,6 @@ class DualBranchUNet4D(nn.Module):
                                                cluster_cross_frame,
                                                cluster_feature_fusion)
                         if use_cluster else None)
-        self.cluster_fg_mode = cluster_fg_mode
-        self.cluster_fg_seed_th = float(cluster_fg_seed_th)
         self.register_buffer("_movable", torch.tensor([1, 2, 3, 4, 5, 6, 7, 8]),
                              persistent=False)
 
@@ -101,16 +98,8 @@ class DualBranchUNet4D(nn.Module):
                "offset_pred": self.offset_head(feats),
                "coords": coords}
         if self.cluster is not None:
-            probm = torch.softmax(motion_logits, 1)[:, 1]
-            fg_sem = torch.isin(semantic_logits.argmax(1),
-                                self._movable.to(feats.device))
-            fg_mot = probm >= self.cluster_fg_seed_th
-            if self.cluster_fg_mode == "motion":
-                fg = fg_mot
-            elif self.cluster_fg_mode == "union":
-                fg = fg_sem | fg_mot
-            else:
-                fg = fg_sem
+            sem_arg = semantic_logits.argmax(1)
+            fg = torch.isin(sem_arg, self._movable.to(sem_arg.device))
             fused, clog, rid = self.cluster(feats, coords, motion_logits, fg)
             out["motion_logits"] = fused
             out["cluster_logits"] = clog
