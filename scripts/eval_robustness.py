@@ -15,7 +15,6 @@ import torch
 from torch.utils.data import DataLoader
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from sparseunet4d.models.model import SparseUNet4D
 from sparseunet4d.datasets import SemanticKITTI4D, me_collate
 from scripts.train import validate
 
@@ -28,7 +27,11 @@ def build_val_loader(cfg, rot_std, trans_std):
         rot_std_deg=rot_std, trans_std_m=trans_std,
         pose_seed=cfg["pose"].get("seed", 0), point_range=d["point_range"],
         residual_feats=d.get("residual_feats", True),
-        res_clip=d.get("res_clip", 3.0), frame_offsets=d.get("frame_offsets"), feat_rep=d.get("feat_rep", "label"))
+        res_clip=d.get("res_clip", 3.0), frame_offsets=d.get("frame_offsets"),
+        feat_rep=d.get("feat_rep", "label"),
+        residual_validity=d.get("residual_validity", False),
+        residual_all_frames=d.get("residual_all_frames", False),
+        return_point_map=(cfg["train"].get("checkpoint_metric", "voxel") == "point"))
     return DataLoader(ds, batch_size=cfg["train"]["batch_size"],
                       shuffle=False, collate_fn=me_collate, num_workers=4)
 
@@ -51,11 +54,10 @@ def main():
     # residuals for frame_offsets [1,2,4,8]); the old hardcoded in_ch=1 and
     # default arch would fail to load or mismatch silently.
     n_frames = d.get("n_frames", 4)
-    in_ch = 1 + (n_frames - 1) if d.get("residual_feats", True) else 1
-    model = SparseUNet4D(
-        in_ch=in_ch, num_semantic=num_sem, base=m.get("base", 32),
-        n_stages=m.get("n_stages", 2), use_se=m.get("use_se", True),
-        use_ego_decouple=m.get("use_ego_decouple", False)).to(device)
+    _k = (n_frames - 1) * (2 if d.get("residual_validity", False) else 1)
+    in_ch = 1 + _k if d.get("residual_feats", True) else 1
+    from scripts.train import build_model
+    model = build_model(m, in_ch, num_sem).to(device)
     ck = torch.load(args.ckpt, map_location=device)
     model.load_state_dict(ck["model"] if "model" in ck else ck, strict=False)
     model.eval()

@@ -66,24 +66,46 @@ def run_batch(model, batch, cfg, device, drift_batch=None):
     loss, parts = total_loss(out, batch["motion"].to(device),
                              batch["semantic"].to(device), cfg["loss"], out_drift,
                              offset_gt=off.to(device) if off is not None else None,
-                             offset_mask=offm.to(device) if offm is not None else None)
+                             offset_mask=offm.to(device) if offm is not None else None,
+                             motion_instance=(batch["motion_instance"].to(device)
+                                              if "motion_instance" in batch else None))
     return out, loss, parts
 
 
 def validate(model, loader, cfg, device, num_sem):
-    model.eval(); mos, sem = MovingThresholdMeter(), IoUMeter(num_sem)
+    thresholds = cfg["train"].get("checkpoint_thresholds")
+    model.eval()
+    mos_voxel = MovingThresholdMeter(thresholds)
+    mos_point = MovingThresholdMeter(thresholds)
+    sem = IoUMeter(num_sem)
+    have_points = False
     with torch.no_grad():
         for batch in loader:
             out, _, _ = run_batch(model, batch, cfg, device)
-            mos.update(out["motion_logits"], batch["motion"].to(device))
+            mos_voxel.update(out["motion_logits"], batch["motion"].to(device))
+            if "ref_point_voxel" in batch:
+                rows = batch["ref_point_voxel"].to(device)
+                mos_point.update(out["motion_logits"][rows],
+                                 batch["ref_point_motion"].to(device))
+                have_points = True
             sem.update(out["semantic_logits"], batch["semantic"].to(device))
     model.train()
-    b = mos.best()
+    voxel = mos_voxel.best()
+    point = mos_point.best() if have_points else None
+    metric = cfg["train"].get("checkpoint_metric", "voxel")
+    if metric not in ("voxel", "point"):
+        raise ValueError("train.checkpoint_metric must be 'voxel' or 'point'")
+    if metric == "point" and point is None:
+        raise ValueError("point checkpoint metric requires return_point_map=True")
+    b = point if metric == "point" else voxel
     # 'moving_iou' is now the threshold-optimal IoU (used for model selection);
     # 'moving_iou_argmax' keeps the old argmax@0.5 number for comparison.
     return {"moving_iou": b["iou"], "moving_iou_argmax": b["iou_argmax"],
             "moving_threshold": b["threshold"], "semantic_miou": sem.miou(),
-            "moving_prec": b["prec"], "moving_rec": b["rec"]}
+            "moving_prec": b["prec"], "moving_rec": b["rec"],
+            "checkpoint_metric": metric,
+            "voxel_iou": voxel["iou"],
+            "point_iou": point["iou"] if point is not None else None}
 
 
 def save_ckpt(path, model, opt, cfg, it, best_iou, no_improve, best_threshold=0.5):
@@ -103,7 +125,8 @@ def lr_at(it, base_lr, warmup, total, schedule):
 
 
 def train(cfg, train_loader, val_loader=None, device="cpu", drift_loader=None,
-          max_iters=None, log_every=50, save_dir="runs/exp", resume=None):
+          max_iters=None, log_every=50, save_dir="runs/exp", resume=None,
+          init=None):
     os.makedirs(save_dir, exist_ok=True)
     num_sem = cfg["dataset"].get("num_semantic", 20)
     m = cfg.get("model", {})
@@ -125,6 +148,13 @@ def train(cfg, train_loader, val_loader=None, device="cpu", drift_loader=None,
     drift_iter = iter(drift_loader) if drift_loader is not None else None
 
     it, best_iou, no_improve, best_thr = 0, -1.0, 0, 0.5
+    if resume and init:
+        raise ValueError("use either resume or init, not both")
+    if init:
+        ck = torch.load(init, map_location=device)
+        state = ck["model"] if "model" in ck else ck
+        model.load_state_dict(state, strict=True)
+        print(f"initialized model weights from {init}")
     if resume and os.path.exists(resume):
         ck = torch.load(resume, map_location=device)
         model.load_state_dict(ck["model"]); opt.load_state_dict(ck["optimizer"])
@@ -139,8 +169,11 @@ def train(cfg, train_loader, val_loader=None, device="cpu", drift_loader=None,
         if val_loader is None: return False
         v = validate(model, val_loader, cfg, device, num_sem)
         print(f"  [val @ {it}] moving_iou={v['moving_iou']:.4f}@th{v['moving_threshold']:.2f} "
+              f"[{v['checkpoint_metric']}] "
               f"(argmax {v['moving_iou_argmax']:.4f}) "
               f"P={v['moving_prec']:.3f} R={v['moving_rec']:.3f} "
+              f"voxel={v['voxel_iou']:.4f} "
+              f"point={v['point_iou'] if v['point_iou'] is not None else float('nan'):.4f} "
               f"semantic_miou={v['semantic_miou']:.4f}", flush=True)
         if v["moving_iou"] > best_iou:
             best_iou = v["moving_iou"]; no_improve = 0; best_thr = v["moving_threshold"]
@@ -201,6 +234,8 @@ if __name__ == "__main__":
     ap.add_argument("--iters", type=int, default=None)
     ap.add_argument("--save-dir", default="runs/exp")
     ap.add_argument("--resume", default=None)
+    ap.add_argument("--init", default=None,
+                    help="warm-start model weights only; optimizer/schedule restart")
     args = ap.parse_args()
     cfg = _load_cfg(args.config)
 
@@ -214,7 +249,10 @@ if __name__ == "__main__":
         inject_bank=d.get("inject_bank"), inject_prob=d.get("inject_prob", 0.0),
         inject_max_n=d.get("inject_max_n", 4), feat_rep=d.get("feat_rep", "label"),
         all_frame_labels=d.get("all_frame_labels", False),   # P3: train only
-        residual_validity=d.get("residual_validity", False))
+        residual_validity=d.get("residual_validity", False),
+        residual_all_frames=d.get("residual_all_frames", False),
+        inject_class_boost=d.get("inject_class_boost"),
+        inject_all_frame_labels=d.get("inject_all_frame_labels", False))
     train_loader = DataLoader(train_ds, batch_size=cfg["train"]["batch_size"],
         shuffle=True, collate_fn=me_collate, num_workers=nw,
         persistent_workers=(nw > 0), pin_memory=True)
@@ -222,10 +260,13 @@ if __name__ == "__main__":
         d["voxel_size"], d["semantic_yaml"], "gt", 0.0, 0.0, p["seed"], d["point_range"],
         residual_feats=d.get("residual_feats", True), res_clip=d.get("res_clip", 3.0),
         frame_offsets=d.get("frame_offsets"), feat_rep=d.get("feat_rep", "label"),
-        residual_validity=d.get("residual_validity", False))
+        residual_validity=d.get("residual_validity", False),
+        residual_all_frames=d.get("residual_all_frames", False),
+        return_point_map=(cfg["train"].get("checkpoint_metric", "voxel") == "point"))
     val_loader = DataLoader(val_ds, batch_size=cfg["train"]["batch_size"],
         shuffle=False, collate_fn=me_collate, num_workers=nw,
         persistent_workers=(nw > 0), pin_memory=True)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     train(cfg, train_loader, val_loader=val_loader, device=device,
-          max_iters=args.iters, save_dir=args.save_dir, resume=args.resume)
+          max_iters=args.iters, save_dir=args.save_dir, resume=args.resume,
+          init=args.init)

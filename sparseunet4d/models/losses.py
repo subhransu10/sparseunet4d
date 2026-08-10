@@ -42,7 +42,8 @@ def consistency_loss(logits_clean, logits_drift):
 
 
 def total_loss(out, motion_labels, semantic_labels, cfg,
-               out_drift=None, offset_gt=None, offset_mask=None):
+               out_drift=None, offset_gt=None, offset_mask=None,
+               motion_instance=None):
     w = None
     if cfg.get("moving_class_weight", 1.0) != 1.0:
         w = torch.tensor([1.0, cfg["moving_class_weight"]],
@@ -79,7 +80,37 @@ def total_loss(out, motion_labels, semantic_labels, cfg,
         if l_clu is not None:
             loss = loss + cfg["cluster_weight"] * l_clu
             parts["cluster"] = l_clu.item()
+    if motion_instance is not None and cfg.get("instance_detection_weight", 0.0) > 0:
+        l_inst = instance_detection_loss(
+            out["motion_logits"], motion_instance,
+            topk_fraction=cfg.get("instance_topk_fraction", 0.1))
+        if l_inst is not None:
+            loss = loss + cfg["instance_detection_weight"] * l_inst
+            parts["instance"] = l_inst.item()
     return loss, parts
+
+
+def instance_detection_loss(logits, instance_ids, topk_fraction=0.1):
+    """Equal-weight seed-detection loss over reference moving instances.
+
+    A large car and a small pedestrian each contribute one term.  For every
+    instance, the highest-confidence ``topk_fraction`` of its voxels must carry
+    a positive motion margin.  This targets wholly missed objects while leaving
+    per-voxel CE/Dice responsible for precision and object completion.
+    """
+    if not 0 < topk_fraction <= 1:
+        raise ValueError("instance_topk_fraction must be in (0, 1]")
+    valid = instance_ids >= 0
+    if not valid.any():
+        return None
+    margin = logits[:, 1] - logits[:, 0]
+    losses = []
+    for inst_id in torch.unique(instance_ids[valid]):
+        scores = margin[instance_ids == inst_id]
+        k = max(1, int(round(scores.numel() * topk_fraction)))
+        seed_margin = torch.topk(scores, min(k, scores.numel())).values.mean()
+        losses.append(F.softplus(-seed_margin))
+    return torch.stack(losses).mean() if losses else None
 
 
 def cluster_moving_loss(cluster_logits, cluster_row_id, motion_labels):

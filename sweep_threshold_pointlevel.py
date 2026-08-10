@@ -40,7 +40,8 @@ def main():
         d["point_range"], residual_feats=d.get("residual_feats", True),
         res_clip=d.get("res_clip", 3.0), return_point_map=True,
         frame_offsets=d.get("frame_offsets"), feat_rep=d.get("feat_rep", "label"),
-        residual_validity=d.get("residual_validity", False))
+        residual_validity=d.get("residual_validity", False),
+        residual_all_frames=d.get("residual_all_frames", False))
     loader = DataLoader(ds, batch_size=cfg["train"]["batch_size"], shuffle=False,
                         collate_fn=me_collate, num_workers=4)
 

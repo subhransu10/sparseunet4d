@@ -44,7 +44,7 @@ class MOSInference:
         if backend_name:
             os.environ["SU4D_BACKEND"] = backend_name
         from sparseunet4d.models.backend import backend
-        from sparseunet4d.models.model import SparseUNet4D
+        from scripts.train import build_model
 
         with open(config_path) as f:
             cfg = yaml.safe_load(f); cfg.setdefault("model", {})
@@ -59,6 +59,8 @@ class MOSInference:
         self.point_range = d.get("point_range", None)
         self.residual_feats = d.get("residual_feats", True)
         self.res_clip = d.get("res_clip", 3.0)
+        self.residual_validity = d.get("residual_validity", False)
+        self.residual_all_frames = d.get("residual_all_frames", False)
         # must match training: 'residual' picks the max-|residual| point per
         # voxel via the SAME shared helper the dataset uses (bit-identical);
         # 'label' (legacy ckpts) falls back to first-occurrence at inference.
@@ -67,12 +69,9 @@ class MOSInference:
         self.propagate = propagate
         self._backend = backend()
 
-        in_ch = 1 + (self.n_frames - 1) if self.residual_feats else 1
-        self.model = SparseUNet4D(
-            in_ch, d.get("num_semantic", 20), base=m.get("base", 32),
-            n_stages=m.get("n_stages", 2), use_se=m.get("use_se", True),
-            use_ego_decouple=m.get("use_ego_decouple", False)
-        ).to(device).eval()
+        k = (self.n_frames - 1) * (2 if self.residual_validity else 1)
+        in_ch = 1 + k if self.residual_feats else 1
+        self.model = build_model(m, in_ch, d.get("num_semantic", 20)).to(device).eval()
         ck = torch.load(ckpt_path, map_location=device)
         self.threshold = float(os.environ.get('SU4D_THRESHOLD',
             ck.get('best_threshold', 0.5) if isinstance(ck, dict) else 0.5))
@@ -117,7 +116,7 @@ class MOSInference:
         """EXACT mirror of SemanticKITTI4D.__getitem__ (unlabelled path),
         offset-aware. `stack` = [(xyz, remission, rel_to_ref, offset)]."""
         from sparseunet4d.datasets.semantickitti import _transform
-        from sparseunet4d.datasets.residual_features import residual_channels
+        from sparseunet4d.datasets.residual_features import temporal_residual_blocks
 
         coords_all, feats_all, frame_xyz = [], [], []
         stack_offsets = [o for (_, _, _, o) in stack]
@@ -144,15 +143,10 @@ class MOSInference:
 
         K = self.n_frames - 1
         if self.residual_feats and K > 0:
-            # channel k corresponds to self.offsets[k]; a missing offset -> zeros
-            past_by_off = {stack_offsets[t]: frame_xyz[t]
-                           for t in range(1, len(frame_xyz))}
-            past_list = [past_by_off.get(o, np.zeros((0, 3), np.float32))
-                         for o in self.offsets]
-            R = residual_channels(frame_xyz[0], past_list,
-                                  normalize=False, clip=self.res_clip)
-            res_blocks = [R] + [np.zeros((len(frame_xyz[t]), K), np.float32)
-                                for t in range(1, len(frame_xyz))]
+            res_blocks = temporal_residual_blocks(
+                frame_xyz, stack_offsets, self.offsets, clip=self.res_clip,
+                return_validity=self.residual_validity,
+                all_frames=self.residual_all_frames)
             feats = np.concatenate([feats, np.concatenate(res_blocks, 0)], 1)
 
         q = coords.copy()
@@ -266,7 +260,9 @@ def replay_test(args):
     ds = SemanticKITTI4D(d["root"], [seq], d["n_frames"], d["voxel_size"],
         d["semantic_yaml"], "gt", 0.0, 0.0, 0, d["point_range"],
         residual_feats=d.get("residual_feats", True),
-        res_clip=d.get("res_clip", 3.0), frame_offsets=d.get("frame_offsets"))
+        res_clip=d.get("res_clip", 3.0), frame_offsets=d.get("frame_offsets"),
+        residual_validity=d.get("residual_validity", False),
+        residual_all_frames=d.get("residual_all_frames", False))
     provider = ds.pose_providers[seq]
     mos = MOSInference(args.config, args.ckpt, device=args.device,
                        propagate=args.propagate)

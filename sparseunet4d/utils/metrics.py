@@ -51,10 +51,17 @@ class IoUMeter:
 class MovingThresholdMeter:
     """Streaming TP/FP/FN for the moving class over a grid of softmax
     thresholds, so validation can report (and select on) the IoU-optimal
-    operating point instead of argmax@0.5. The model is heavily precision-
-    skewed, so the best threshold is typically well below 0.5. Ignores -1."""
+    operating point instead of argmax@0.5. Different runs can peak on either
+    side of 0.5, so the default grid covers 0.05 through 0.95. Ignores -1."""
 
-    def __init__(self, thresholds=(0.5, 0.4, 0.3, 0.25, 0.2, 0.15, 0.1)):
+    def __init__(self, thresholds=None):
+        if thresholds is None:
+            # Cover both recall-skewed and precision-skewed models.  The old
+            # grid stopped at 0.5 even though dual_v4 peaks near 0.93.
+            thresholds = [0.5] + [x / 100 for x in range(5, 100, 5)
+                                  if x != 50]
+        if not thresholds:
+            raise ValueError("threshold grid must not be empty")
         self.th = torch.tensor(list(thresholds), dtype=torch.float64)
         self.reset()
 
@@ -86,5 +93,7 @@ class MovingThresholdMeter:
         k = int(torch.argmax(iou))
         prec = (self.tp[k] / (self.tp[k] + self.fp[k]).clamp(min=1)).item()
         rec = (self.tp[k] / (self.tp[k] + self.fn[k]).clamp(min=1)).item()
+        argmax_k = int(torch.argmin(torch.abs(self.th - 0.5)))
         return {"threshold": float(self.th[k]), "iou": float(iou[k]),
-                "prec": prec, "rec": rec, "iou_argmax": float(iou[0])}
+                "prec": prec, "rec": rec,
+                "iou_argmax": float(iou[argmax_k])}

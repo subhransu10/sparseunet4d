@@ -14,7 +14,7 @@ import os
 from scipy import ndimage
 import numpy as np
 from torch.utils.data import Dataset
-from .residual_features import residual_channels
+from .residual_features import temporal_residual_blocks
 from .poses import build_pose_provider
 from .label_map import (
     load_semantic_learning_map, split_label,
@@ -103,7 +103,8 @@ class SemanticKITTI4D(Dataset):
                  fixed_transform=None,
                  inject_bank=None, inject_prob=0.0, inject_max_n=4,
                  feat_rep="label", all_frame_labels=False,
-                 residual_validity=False):
+                 residual_validity=False, residual_all_frames=False,
+                 inject_class_boost=None, inject_all_frame_labels=False):
         """
         root:        .../sequences
         sequences:   list of int (e.g. list(range(11)) for train/val)
@@ -127,6 +128,10 @@ class SemanticKITTI4D(Dataset):
         # P3: supervise EVERY frame in the window (train only), not just t=0.
         # Each past frame uses its own .label file -> ~5x denser gradient.
         self.all_frame_labels = all_frame_labels
+        # Give every supervised temporal slice a real motion signature instead
+        # of zeroing the residual channels on t>0.  The reference-frame feature
+        # is bit-identical to the legacy implementation.
+        self.residual_all_frames = bool(residual_all_frames)
         # lever D: per-offset 'past pixel had a return' channel, so the net
         # can tell 'no motion' from 'no observation'.
         self.residual_validity = residual_validity
@@ -153,7 +158,15 @@ class SemanticKITTI4D(Dataset):
         self.inject_bank_path = inject_bank
         self.inject_prob = float(inject_prob)
         self.inject_max_n = int(inject_max_n)
+        self.inject_class_boost = {
+            int(k): float(v) for k, v in (inject_class_boost or {}).items()
+        }
+        if any((not np.isfinite(v)) or v <= 0
+               for v in self.inject_class_boost.values()):
+            raise ValueError("inject_class_boost values must be finite and > 0")
+        self.inject_all_frame_labels = bool(inject_all_frame_labels)
         self._bank = None   # lazy per-worker load
+        self._bank_prob = None
         # voxel FEATURE representative: 'label' = legacy (motion-priority point,
         # unreproducible at inference); 'residual' = argmax |residual| (label-
         # free -> train/inference identical). Labels ALWAYS use motion priority.
@@ -189,10 +202,18 @@ class SemanticKITTI4D(Dataset):
     def _ensure_bank(self):
         if self._bank is None:
             self._bank = np.load(self.inject_bank_path, allow_pickle=True)
+            if len(self._bank) == 0:
+                raise ValueError(f"empty mover bank: {self.inject_bank_path}")
+            if self.inject_class_boost:
+                weights = np.asarray([
+                    self.inject_class_boost.get(int(x["sem_raw"]), 1.0)
+                    for x in self._bank
+                ], dtype=np.float64)
+                self._bank_prob = weights / weights.sum()
         return self._bank
 
     def _inject_movers(self, stack_offsets, frame_xyz, coords_all, feats_all,
-                       mot_all, sem_all, off_all, omask_all):
+                       mot_all, sem_all, off_all, omask_all, minst_all):
         """Paste 1..inject_max_n bank movers into this stack.
 
         One rigid yaw+translation per instance is applied to EVERY frame of its
@@ -206,8 +227,15 @@ class SemanticKITTI4D(Dataset):
             return
         bank = self._ensure_bank()
         ref_xy = frame_xyz[0][:, :2]
+        valid_inst = minst_all[0][minst_all[0] >= 0]
+        next_inst = int(valid_inst.max()) + 1 if len(valid_inst) else 1
         for _ in range(int(rng.integers(1, self.inject_max_n + 1))):
-            inst = bank[int(rng.integers(len(bank)))]
+            if self._bank_prob is None:
+                inst = bank[int(rng.integers(len(bank)))]
+            else:
+                inst = bank[int(rng.choice(len(bank), p=self._bank_prob))]
+            injected_inst = next_inst
+            next_inst += 1
             pts0 = inst["frames"][0]
             c0 = pts0[:, :3].mean(0)
             placed = None
@@ -255,20 +283,30 @@ class SemanticKITTI4D(Dataset):
                 coords_all[t_idx] = np.concatenate(
                     [coords_all[t_idx], np.concatenate([xyz, t_col], 1)], 0)
                 feats_all[t_idx] = np.concatenate([feats_all[t_idx], rem], 0)
-                if t_idx == 0:
+                if t_idx == 0 or (self.all_frame_labels and
+                                  self.inject_all_frame_labels):
                     mot_i = np.ones(n, np.int64)
                     sem_i = np.full(n, sem_lab, np.int64)
-                    off_i = (xyz.mean(0) - xyz).astype(np.float32)
-                    om_i = np.ones(n, bool)
+                    if t_idx == 0:
+                        off_i = (xyz.mean(0) - xyz).astype(np.float32)
+                        om_i = np.ones(n, bool)
+                    else:
+                        # Offset supervision remains reference-only.
+                        off_i = np.zeros((n, 3), np.float32)
+                        om_i = np.zeros(n, bool)
                 else:
                     mot_i = np.full(n, IGNORE_INDEX, np.int64)
                     sem_i = np.full(n, IGNORE_INDEX, np.int64)
                     off_i = np.zeros((n, 3), np.float32)
                     om_i = np.zeros(n, bool)
+                minst_i = (np.full(n, injected_inst, np.int64)
+                           if t_idx == 0 else
+                           np.full(n, IGNORE_INDEX, np.int64))
                 mot_all[t_idx] = np.concatenate([mot_all[t_idx], mot_i], 0)
                 sem_all[t_idx] = np.concatenate([sem_all[t_idx], sem_i], 0)
                 off_all[t_idx] = np.concatenate([off_all[t_idx], off_i], 0)
                 omask_all[t_idx] = np.concatenate([omask_all[t_idx], om_i], 0)
+                minst_all[t_idx] = np.concatenate([minst_all[t_idx], minst_i], 0)
 
     def _aug_matrix(self):
         """Random z-rotation + x/y flips + uniform scale as one 3x3 matrix.
@@ -303,7 +341,7 @@ class SemanticKITTI4D(Dataset):
             aug_R = None
 
         coords_all, feats_all, mot_all, sem_all = [], [], [], []
-        off_all, omask_all = [], []
+        off_all, omask_all, minst_all = [], [], []
         frame_xyz = []  # keep clipped xyz per frame for residual computation
         for t_idx, f, o in stack:
             bin_p, lab_p = self._frame_paths(seq, f)
@@ -341,14 +379,19 @@ class SemanticKITTI4D(Dataset):
                     # offset head stays reference-only (its target is the
                     # reference-frame instance centre)
                     off, omask = _gt_offsets_panoptic(xyz, sem_raw, inst_raw)
+                    minst = np.where((mot == 1) & (inst_raw > 0),
+                                     inst_raw.astype(np.int64),
+                                     IGNORE_INDEX)
                 else:
                     off = np.zeros((len(xyz), 3), np.float32)
                     omask = np.zeros(len(xyz), bool)
+                    minst = np.full(len(xyz), IGNORE_INDEX, np.int64)
             else:
                 mot = np.full(len(xyz), IGNORE_INDEX, dtype=np.int64)
                 sem = np.full(len(xyz), IGNORE_INDEX, dtype=np.int64)
                 off = np.zeros((len(xyz), 3), np.float32)
                 omask = np.zeros(len(xyz), bool)
+                minst = np.full(len(xyz), IGNORE_INDEX, np.int64)
 
             frame_xyz.append(xyz)
             t_col = np.full((len(xyz), 1), t_idx, dtype=np.float32)
@@ -358,12 +401,13 @@ class SemanticKITTI4D(Dataset):
             sem_all.append(sem)
             off_all.append(off)
             omask_all.append(omask)
+            minst_all.append(minst)
 
         # trajectory-consistent mover injection (train only) — before residuals
         # so injected points participate in the range-image comparison.
         if self.inject_bank_path is not None and self.inject_prob > 0:
             self._inject_movers(stack_offsets, frame_xyz, coords_all, feats_all,
-                                mot_all, sem_all, off_all, omask_all)
+                                mot_all, sem_all, off_all, omask_all, minst_all)
 
         coords = np.concatenate(coords_all, 0)
         feats = np.concatenate(feats_all, 0)
@@ -371,6 +415,7 @@ class SemanticKITTI4D(Dataset):
         sem = np.concatenate(sem_all, 0)
         off = np.concatenate(off_all, 0)
         omask = np.concatenate(omask_all, 0)
+        minst = np.concatenate(minst_all, 0)
 
         # ---- signed residual-image motion features (fixed width K) ------------
         # Reference points get real residuals vs each past offset; past-frame
@@ -378,19 +423,10 @@ class SemanticKITTI4D(Dataset):
         # of how many past frames actually loaded (early-in-sequence -> zeros).
         K = self.n_frames - 1
         if self.residual_feats and K > 0:
-            # map temporal offset -> that past frame's xyz (skip the reference)
-            past_by_off = {stack_offsets[t]: frame_xyz[t]
-                           for t in range(1, len(frame_xyz))}
-            # channel k corresponds to self.offsets[k]; a missing offset (early
-            # in the sequence) contributes an empty past -> zero residual.
-            past_list = [past_by_off.get(o, np.zeros((0, 3), np.float32))
-                         for o in self.offsets]
-            R = residual_channels(frame_xyz[0], past_list,
-                                  normalize=False, clip=self.res_clip,
-                                  return_validity=self.residual_validity)
-            Kc = R.shape[1]                       # K, or 2K with validity
-            res_blocks = [R] + [np.zeros((len(frame_xyz[t]), Kc), np.float32)
-                               for t in range(1, len(frame_xyz))]
+            res_blocks = temporal_residual_blocks(
+                frame_xyz, stack_offsets, self.offsets, clip=self.res_clip,
+                return_validity=self.residual_validity,
+                all_frames=self.residual_all_frames)
             residuals = np.concatenate(res_blocks, 0)
             feats = np.concatenate([feats, residuals], axis=1)  # (total, 1+K)
         # -----------------------------------------------------------------------
@@ -423,6 +459,7 @@ class SemanticKITTI4D(Dataset):
             "semantic": sem[rep],                     # (M,)  int64
             "offset": off[rep].astype(np.float32),    # (M, 3) float32
             "offset_mask": omask[rep],                # (M,)  bool
+            "motion_instance": minst[rep],            # ref moving instance, else -1
             "meta": (seq, ref),
         }
         if self.return_point_map:

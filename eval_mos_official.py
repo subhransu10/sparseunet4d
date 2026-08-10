@@ -21,7 +21,6 @@ import torch
 sys.path.insert(0, os.path.expanduser("~/sparseunet4d"))
 from sparseunet4d.datasets import SemanticKITTI4D, me_collate
 from sparseunet4d.models.backend import backend
-from sparseunet4d.models.model import SparseUNet4D
 from torch.utils.data import DataLoader
 
 
@@ -69,7 +68,8 @@ def main():
         residual_feats=d.get("residual_feats", True), res_clip=d.get("res_clip", 3.0),
         return_point_map=args.point_level, frame_offsets=d.get("frame_offsets"),
         feat_rep=d.get("feat_rep", "label"),
-        residual_validity=d.get("residual_validity", False))
+        residual_validity=d.get("residual_validity", False),
+        residual_all_frames=d.get("residual_all_frames", False))
     loader = DataLoader(ds, batch_size=cfg["train"]["batch_size"], shuffle=False,
                         collate_fn=me_collate, num_workers=4)
 

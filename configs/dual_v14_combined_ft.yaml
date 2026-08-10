@@ -1,0 +1,52 @@
+# Promote only after v12 and v13 demonstrate complementary gains.
+dataset:
+  root: /mnt/d/Subhransu workspace/Dataset/my_kitti_dataset/dataset/sequences
+  semantic_yaml: /mnt/d/Subhransu workspace/Dataset/my_kitti_dataset/dataset/sequences/semantic-kitti.yaml
+  train_sequences: [0, 1, 2, 3, 4, 5, 6, 7, 9, 10]
+  val_sequences: [8]
+  n_frames: 5
+  frame_offsets: [1, 2, 4, 8]
+  voxel_size: 0.1
+  point_range: 51.2
+  residual_feats: true
+  residual_all_frames: true
+  res_clip: 3.0
+  augment: false
+  inject_bank: /home/suba/sparseunet4d/mover_bank.npy
+  inject_prob: 0.4
+  inject_max_n: 2
+  inject_class_boost: {254: 4.0}
+  all_frame_labels: true
+  inject_all_frame_labels: true
+pose:
+  mode: gt
+  rot_std_deg: 0.0
+  trans_std_m: 0.0
+  seed: 0
+train:
+  batch_size: 2
+  iters: 16000
+  lr: 0.0002
+  weight_decay: 0.0001
+  val_every: 1000
+  warmup_iters: 250
+  lr_schedule: cosine
+  checkpoint_metric: point
+  checkpoint_thresholds: [0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90, 0.93, 0.95]
+loss:
+  motion_weight: 1.0
+  semantic_weight: 1.0
+  dice_weight: 1.0
+  moving_class_weight: 1.25
+  consistency_weight: 0.0
+  cluster_weight: 0.5
+  instance_detection_weight: 0.25
+  instance_topk_fraction: 0.10
+model:
+  use_cluster: true
+  cluster_link: 2
+  cluster_min_size: 3
+  cluster_cross_frame: false
+  cluster_feature_fusion: true
+  dual_branch: true
+  app_ch: 1
