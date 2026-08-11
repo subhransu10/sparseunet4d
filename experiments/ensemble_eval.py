@@ -47,14 +47,16 @@ def to_st(batch, dev):
     return ST(feats, coords)
 
 
-def iou_at(prob, gt, th):
-    m = gt != -1
-    pr = (prob[m] >= th).astype(np.int64); g = gt[m]
-    tp = int(((pr == 1) & (g == 1)).sum())
-    fp = int(((pr == 1) & (g == 0)).sum())
-    fn = int(((pr == 0) & (g == 1)).sum())
-    return (tp / max(tp + fp + fn, 1), tp / max(tp + fp, 1),
-            tp / max(tp + fn, 1))
+def threshold_counts(scores, positive, thresholds):
+    """Return exact positive/negative prediction counts without N*T arrays."""
+    # bin k means exactly k sorted thresholds are <= the score.  Therefore the
+    # number predicted positive at threshold j is sum(hist[j + 1:]).
+    bins = np.searchsorted(thresholds, scores, side="right")
+    pos_hist = np.bincount(bins[positive], minlength=len(thresholds) + 1)
+    neg_hist = np.bincount(bins[~positive], minlength=len(thresholds) + 1)
+    pos_ge = np.cumsum(pos_hist[::-1], dtype=np.int64)[::-1][1:]
+    neg_ge = np.cumsum(neg_hist[::-1], dtype=np.int64)[::-1][1:]
+    return pos_ge, neg_ge
 
 
 def main():
@@ -84,7 +86,16 @@ def main():
     ma = load_model(args.ckpt_a, d, m, dev)
     mb = load_model(args.ckpt_b, d, m, dev)
 
-    pa_l, pb_l, la_l, lb_l, gt_l = [], [], [], [], []
+    thresholds = np.asarray(sorted(set(args.thresholds)), dtype=np.float32)
+    weights = np.asarray(args.weights, dtype=np.float32)
+    if np.any((weights < 0) | (weights > 1)):
+        raise ValueError("ensemble weights must be in [0, 1]")
+
+    # [fusion, weight, threshold]. Accumulating confusion counts per frame
+    # avoids retaining hundreds of millions of point predictions in RAM.
+    tp = np.zeros((2, len(weights), len(thresholds)), dtype=np.int64)
+    fp = np.zeros_like(tp)
+    total_pos = 0
     with torch.no_grad():
         for bi, batch in enumerate(loader):
             x = to_st(batch, dev)
@@ -95,32 +106,44 @@ def main():
             margin_a = (logits_a[:, 1] - logits_a[:, 0]).cpu().numpy()
             margin_b = (logits_b[:, 1] - logits_b[:, 0]).cpu().numpy()
             rpv = batch["ref_point_voxel"].numpy()
-            pa_l.append(prob_a[rpv]); pb_l.append(prob_b[rpv])
-            la_l.append(margin_a[rpv]); lb_l.append(margin_b[rpv])
-            gt_l.append(batch["ref_point_motion"].numpy())
+            pa, pb = prob_a[rpv], prob_b[rpv]
+            la, lb = margin_a[rpv], margin_b[rpv]
+            gt = batch["ref_point_motion"].numpy()
+            valid = gt != -1
+            positive = gt[valid] == 1
+            total_pos += int(positive.sum())
+            pa, pb, la, lb = pa[valid], pb[valid], la[valid], lb[valid]
+
+            for wi, w in enumerate(weights):
+                scores = w * pa + (1.0 - w) * pb
+                batch_tp, batch_fp = threshold_counts(
+                    scores, positive, thresholds)
+                tp[0, wi] += batch_tp
+                fp[0, wi] += batch_fp
+
+                margin = w * la + (1.0 - w) * lb
+                scores = 1.0 / (1.0 + np.exp(-np.clip(margin, -50, 50)))
+                batch_tp, batch_fp = threshold_counts(
+                    scores, positive, thresholds)
+                tp[1, wi] += batch_tp
+                fp[1, wi] += batch_fp
             if bi % 500 == 0:
                 print(f"  frame {bi}/{len(loader)}", flush=True)
-    pa, pb = np.concatenate(pa_l), np.concatenate(pb_l)
-    la, lb = np.concatenate(la_l), np.concatenate(lb_l)
-    gt = np.concatenate(gt_l)
-    thresholds = sorted(set(args.thresholds))
-
-    def best_at(prob):
-        return max(((iou_at(prob, gt, th), th) for th in thresholds),
-                   key=lambda x: x[0][0])
 
     rows = []
-    for fusion in ("prob", "logit"):
-        for w in args.weights:
-            if not 0 <= w <= 1:
-                raise ValueError("ensemble weights must be in [0, 1]")
-            if fusion == "prob":
-                pred = w * pa + (1.0 - w) * pb
-            else:
-                margin = w * la + (1.0 - w) * lb
-                pred = 1.0 / (1.0 + np.exp(-np.clip(margin, -50, 50)))
-            (iou, prec, rec), th = best_at(pred)
-            rows.append((iou, fusion, w, th, prec, rec))
+    for fi, fusion in enumerate(("prob", "logit")):
+        for wi, w in enumerate(weights):
+            fn = total_pos - tp[fi, wi]
+            denom = tp[fi, wi] + fp[fi, wi] + fn
+            ious = tp[fi, wi] / np.maximum(denom, 1)
+            ti = int(np.argmax(ious))
+            tpi, fpi, fni = (int(tp[fi, wi, ti]), int(fp[fi, wi, ti]),
+                             int(fn[ti]))
+            iou = float(ious[ti])
+            prec = tpi / max(tpi + fpi, 1)
+            rec = tpi / max(tpi + fni, 1)
+            rows.append((iou, fusion, float(w), float(thresholds[ti]),
+                         prec, rec))
 
     print(f"\n=== ensemble on val seq {d['val_sequences']} ===")
     print(f"{'fusion':>8} {'w(A)':>6} {'best IoU':>9} {'@th':>5} "
