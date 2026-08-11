@@ -1,0 +1,53 @@
+  frame 0/4071
+  frame 200/4071
+  frame 400/4071
+  frame 600/4071
+  frame 800/4071
+  frame 1000/4071
+  frame 1200/4071
+  frame 1400/4071
+  frame 1600/4071
+  frame 1800/4071
+  frame 2000/4071
+  frame 2200/4071
+  frame 2400/4071
+  frame 2600/4071
+  frame 2800/4071
+  frame 3000/4071
+  frame 3200/4071
+  frame 3400/4071
+  frame 3600/4071
+  frame 3800/4071
+  frame 4000/4071
+
+==== overall (th=0.85, 4071 frames) ====
+IoU 0.7662  P 0.8778  R 0.8576  TP 1427178 FP 198673 FN 236922
+
+==== by RANGE (moving points) ====
+    bin(m)   recall     prec      GTmov         FN         FP
+   0-10       0.905    0.880     911652      86429     112871
+  10-20       0.828    0.891     553456      95255      56024
+  20-30       0.743    0.865     132308      34004      15389
+  30-40       0.732    0.807      42351      11341       7407
+  40-52       0.598    0.712      23866       9586       5781
+
+==== by MOVER CLASS ====
+         class   recall      GTpts         FN
+           car    0.847     957795     146751
+        person    0.794     397499      82077
+     bicyclist    0.979     306266       6542
+ other-vehicle    0.389       2540       1552
+
+==== by INSTANCE (are misses whole objects?) ====
+            bucket   #inst   %inst  %mov pts
+   missed entirely    1155    19.2       8.7
+     mostly missed     300     5.0       3.4
+   partially found     783    13.0       8.4
+       fully found    3767    62.7      79.5
+
+  instance-oracle ceiling (complete partially-detected instances):
+    detected>=  10%: IoU -> 0.8154
+    detected>=  25%: IoU -> 0.7992
+    detected>=  50%: IoU -> 0.7855
+
+Interpretation: far-field-dominated FN => sensor/density limit (more capacity won't fix it). Whole-instance misses with a high oracle ceiling => object-level reasoning still has headroom. Uniform thin margins => calibration/boundary, not structure.
