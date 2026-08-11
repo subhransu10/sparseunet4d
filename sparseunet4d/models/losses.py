@@ -11,20 +11,31 @@ import torch.nn.functional as F
 IGNORE_INDEX = -1
 
 
-def weighted_ce(logits, labels, class_weights=None):
-    return F.cross_entropy(logits, labels, weight=class_weights,
-                           ignore_index=IGNORE_INDEX)
+def weighted_ce(logits, labels, class_weights=None, sample_weights=None):
+    if sample_weights is None:
+        return F.cross_entropy(logits, labels, weight=class_weights,
+                               ignore_index=IGNORE_INDEX)
+    mask = labels != IGNORE_INDEX
+    if mask.sum() == 0:
+        return logits.sum() * 0.0
+    per = F.cross_entropy(logits[mask], labels[mask], reduction="none")
+    effective = sample_weights[mask].to(per.dtype)
+    if class_weights is not None:
+        effective = effective * class_weights[labels[mask]]
+    return (per * effective).sum() / effective.sum().clamp(min=1e-6)
 
 
-def dice_moving(logits, labels, eps=1.0):
+def dice_moving(logits, labels, eps=1.0, sample_weights=None):
     """Soft Dice on the moving class (index 1), reference voxels only."""
     mask = labels != IGNORE_INDEX
     if mask.sum() == 0:
         return logits.sum() * 0.0
     p = torch.softmax(logits[mask], dim=1)[:, 1]
     g = (labels[mask] == 1).float()
-    num = 2 * (p * g).sum()
-    den = p.sum() + g.sum() + eps
+    weight = (torch.ones_like(p) if sample_weights is None
+              else sample_weights[mask].to(p.dtype))
+    num = 2 * (weight * p * g).sum()
+    den = (weight * p).sum() + (weight * g).sum() + eps
     return 1.0 - num / den
 
 
@@ -43,18 +54,27 @@ def consistency_loss(logits_clean, logits_drift):
 
 def total_loss(out, motion_labels, semantic_labels, cfg,
                out_drift=None, offset_gt=None, offset_mask=None,
-               motion_instance=None):
+               motion_instance=None, point_count=None):
     w = None
     if cfg.get("moving_class_weight", 1.0) != 1.0:
         w = torch.tensor([1.0, cfg["moving_class_weight"]],
                          device=out["motion_logits"].device)
-    l_mot = weighted_ce(out["motion_logits"], motion_labels, w)
+    point_weight = None
+    exponent = float(cfg.get("point_weight_exponent", 0.0))
+    if point_count is not None and exponent > 0:
+        point_weight = point_count.float().clamp(min=1.0).pow(exponent)
+        cap = cfg.get("point_weight_cap")
+        if cap is not None:
+            point_weight = point_weight.clamp(max=float(cap))
+    l_mot = weighted_ce(out["motion_logits"], motion_labels, w, point_weight)
     l_sem = weighted_ce(out["semantic_logits"], semantic_labels)
     if cfg.get("tversky", False):
         l_dice = tversky_moving(out["motion_logits"], motion_labels,
-                                cfg.get("tversky_alpha", 0.3), cfg.get("tversky_beta", 0.7))
+                                cfg.get("tversky_alpha", 0.3), cfg.get("tversky_beta", 0.7),
+                                sample_weights=point_weight)
     else:
-        l_dice = dice_moving(out["motion_logits"], motion_labels)
+        l_dice = dice_moving(out["motion_logits"], motion_labels,
+                             sample_weights=point_weight)
     loss = (cfg.get("motion_weight", 1.0) * l_mot
             + cfg.get("semantic_weight", 1.0) * l_sem
             + cfg.get("dice_weight", 1.0) * l_dice)
@@ -133,14 +153,19 @@ def cluster_moving_loss(cluster_logits, cluster_row_id, motion_labels):
     target = (pos[has] / cnt[has].clamp(min=1.0) > 0.5).float()
     return F.binary_cross_entropy_with_logits(cluster_logits[has], target)
 
-def tversky_moving(logits, labels, alpha=0.3, beta=0.7, eps=1.0):
+def tversky_moving(logits, labels, alpha=0.3, beta=0.7, eps=1.0,
+                   sample_weights=None):
     """Tversky on moving class (idx 1), ref voxels only. beta>alpha favours RECALL."""
     mask = labels != IGNORE_INDEX
     if mask.sum() == 0:
         return logits.sum() * 0.0
     p = torch.softmax(logits[mask], dim=1)[:, 1]
     g = (labels[mask] == 1).float()
-    tp = (p * g).sum(); fp = (p * (1 - g)).sum(); fn = ((1 - p) * g).sum()
+    weight = (torch.ones_like(p) if sample_weights is None
+              else sample_weights[mask].to(p.dtype))
+    tp = (weight * p * g).sum()
+    fp = (weight * p * (1 - g)).sum()
+    fn = (weight * (1 - p) * g).sum()
     return 1.0 - (tp + eps) / (tp + alpha * fp + beta * fn + eps)
 
 def offset_l1(offset_pred, offset_gt, offset_mask):

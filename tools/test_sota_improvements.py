@@ -12,7 +12,7 @@ from sparseunet4d.datasets.residual_features import (
     temporal_residual_blocks,
 )
 from sparseunet4d.utils.metrics import MovingThresholdMeter
-from sparseunet4d.models.losses import instance_detection_loss
+from sparseunet4d.models.losses import instance_detection_loss, weighted_ce
 
 
 def _scan(moving_range):
@@ -71,8 +71,19 @@ def test_instance_detection_loss_reaches_every_object():
     assert logits.grad[4].abs().sum() > 0
 
 
+def test_point_weighted_ce_matches_repeated_points():
+    logits = torch.tensor([[2.0, -1.0], [-1.0, 2.0]])
+    labels = torch.tensor([0, 1])
+    counts = torch.tensor([3.0, 1.0])
+    weighted = weighted_ce(logits, labels, sample_weights=counts)
+    repeated = torch.nn.functional.cross_entropy(
+        logits[torch.tensor([0, 0, 0, 1])], labels[torch.tensor([0, 0, 0, 1])])
+    torch.testing.assert_close(weighted, repeated)
+
+
 if __name__ == "__main__":
     test_dense_temporal_residuals()
     test_threshold_grid_covers_high_confidence_models()
     test_instance_detection_loss_reaches_every_object()
+    test_point_weighted_ce_matches_repeated_points()
     print("SOTA improvement regression tests passed")

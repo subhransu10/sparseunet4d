@@ -68,7 +68,9 @@ def run_batch(model, batch, cfg, device, drift_batch=None):
                              offset_gt=off.to(device) if off is not None else None,
                              offset_mask=offm.to(device) if offm is not None else None,
                              motion_instance=(batch["motion_instance"].to(device)
-                                              if "motion_instance" in batch else None))
+                                              if "motion_instance" in batch else None),
+                             point_count=(batch["point_count"].to(device)
+                                          if "point_count" in batch else None))
     return out, loss, parts
 
 

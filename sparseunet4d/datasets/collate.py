@@ -11,7 +11,7 @@ import torch
 
 def me_collate(batch):
     coords_list, feats_list, mot_list, sem_list, metas = [], [], [], [], []
-    off_list, offm_list = [], []
+    off_list, offm_list, point_count_list = [], [], []
     minst_list, instance_offset = [], 0
     has_pm = "ref_point_voxel" in batch[0]
     rpv_list, rpm_list = [], []
@@ -25,6 +25,7 @@ def me_collate(batch):
         sem_list.append(s["semantic"])
         off_list.append(s["offset"])
         offm_list.append(s["offset_mask"])
+        point_count_list.append(s.get("point_count", np.ones(len(c), np.float32)))
         minst = s.get("motion_instance")
         if minst is not None:
             minst = minst.astype(np.int64, copy=True)
@@ -46,9 +47,11 @@ def me_collate(batch):
     semantic = torch.from_numpy(np.concatenate(sem_list, 0)).long()
     offset = torch.from_numpy(np.concatenate(off_list, 0)).float()
     offset_mask = torch.from_numpy(np.concatenate(offm_list, 0)).bool()
+    point_count = torch.from_numpy(np.concatenate(point_count_list, 0)).float()
     out = {"coords": coords, "feats": feats,
            "motion": motion, "semantic": semantic,
-           "offset": offset, "offset_mask": offset_mask, "meta": metas}
+           "offset": offset, "offset_mask": offset_mask,
+           "point_count": point_count, "meta": metas}
     if len(minst_list) == len(batch):
         out["motion_instance"] = torch.from_numpy(
             np.concatenate(minst_list, 0)).long()

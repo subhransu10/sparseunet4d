@@ -445,6 +445,7 @@ class SemanticKITTI4D(Dataset):
         uniq_coords, inv = np.unique(qcoords, axis=0, return_inverse=True)
         inv = inv.reshape(-1)
         G = uniq_coords.shape[0]
+        point_count = np.bincount(inv, minlength=G).astype(np.float32)
         rep = np.empty(G, dtype=np.int64)
         order = np.argsort(mot, kind="stable")   # ascending: ignore(-1),static(0),moving(1)
         rep[inv[order]] = order                  # last write per voxel = max-priority point
@@ -460,6 +461,7 @@ class SemanticKITTI4D(Dataset):
             "offset": off[rep].astype(np.float32),    # (M, 3) float32
             "offset_mask": omask[rep],                # (M,)  bool
             "motion_instance": minst[rep],            # ref moving instance, else -1
+            "point_count": point_count,               # raw points represented by voxel
             "meta": (seq, ref),
         }
         if self.return_point_map:
