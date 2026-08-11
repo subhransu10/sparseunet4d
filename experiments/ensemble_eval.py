@@ -21,20 +21,20 @@ import torch
 sys.path.insert(0, os.path.expanduser("~/sparseunet4d"))
 from sparseunet4d.datasets import SemanticKITTI4D, me_collate
 from sparseunet4d.models.backend import backend
-from sparseunet4d.models.model import SparseUNet4D
 from torch.utils.data import DataLoader
 
-THRESHOLDS = [0.5, 0.4, 0.3, 0.25, 0.2, 0.15, 0.1]
+THRESHOLDS = [x / 100 for x in range(5, 100, 5)] + [0.93]
+WEIGHTS = [0.0, 0.2, 0.4, 0.5, 0.6, 0.8, 1.0]
 
 
 def load_model(ckpt, d, m, dev):
     n_frames = d.get("n_frames", 4)
-    in_ch = 1 + (n_frames - 1) if d.get("residual_feats", True) else 1
-    model = SparseUNet4D(in_ch, d.get("num_semantic", 20), base=m.get("base", 32),
-        n_stages=m.get("n_stages", 2), use_se=m.get("use_se", True),
-        use_ego_decouple=m.get("use_ego_decouple", False)).to(dev).eval()
+    k = (n_frames - 1) * (2 if d.get("residual_validity", False) else 1)
+    in_ch = 1 + k if d.get("residual_feats", True) else 1
+    from scripts.train import build_model
+    model = build_model(m, in_ch, d.get("num_semantic", 20)).to(dev).eval()
     ck = torch.load(ckpt, map_location=dev)
-    model.load_state_dict(ck["model"] if "model" in ck else ck, strict=False)
+    model.load_state_dict(ck["model"] if "model" in ck else ck, strict=True)
     return model
 
 
@@ -62,7 +62,9 @@ def main():
     ap.add_argument("--config", required=True)
     ap.add_argument("--ckpt-a", required=True)
     ap.add_argument("--ckpt-b", required=True)
-    ap.add_argument("--weight", type=float, default=0.5, help="weight on A")
+    ap.add_argument("--weights", type=float, nargs="+", default=WEIGHTS,
+                    help="weights on checkpoint A")
+    ap.add_argument("--thresholds", type=float, nargs="+", default=THRESHOLDS)
     args = ap.parse_args()
     with open(args.config) as f:
         cfg = yaml.safe_load(f); cfg.setdefault("model", {})
@@ -73,37 +75,62 @@ def main():
         d["voxel_size"], d["semantic_yaml"], "gt", 0.0, 0.0, p["seed"],
         d["point_range"], residual_feats=d.get("residual_feats", True),
         res_clip=d.get("res_clip", 3.0), frame_offsets=d.get("frame_offsets"),
+        feat_rep=d.get("feat_rep", "label"),
+        residual_validity=d.get("residual_validity", False),
+        residual_all_frames=d.get("residual_all_frames", False),
         return_point_map=True)
     loader = DataLoader(ds, batch_size=1, shuffle=False, collate_fn=me_collate,
                         num_workers=4)
     ma = load_model(args.ckpt_a, d, m, dev)
     mb = load_model(args.ckpt_b, d, m, dev)
 
-    pa_l, pb_l, gt_l = [], [], []
+    pa_l, pb_l, la_l, lb_l, gt_l = [], [], [], [], []
     with torch.no_grad():
         for bi, batch in enumerate(loader):
             x = to_st(batch, dev)
-            prob_a = torch.softmax(ma(x)["motion_logits"], 1)[:, 1].cpu().numpy()
-            prob_b = torch.softmax(mb(x)["motion_logits"], 1)[:, 1].cpu().numpy()
+            logits_a = ma(x)["motion_logits"]
+            logits_b = mb(x)["motion_logits"]
+            prob_a = torch.softmax(logits_a, 1)[:, 1].cpu().numpy()
+            prob_b = torch.softmax(logits_b, 1)[:, 1].cpu().numpy()
+            margin_a = (logits_a[:, 1] - logits_a[:, 0]).cpu().numpy()
+            margin_b = (logits_b[:, 1] - logits_b[:, 0]).cpu().numpy()
             rpv = batch["ref_point_voxel"].numpy()
             pa_l.append(prob_a[rpv]); pb_l.append(prob_b[rpv])
+            la_l.append(margin_a[rpv]); lb_l.append(margin_b[rpv])
             gt_l.append(batch["ref_point_motion"].numpy())
             if bi % 500 == 0:
                 print(f"  frame {bi}/{len(loader)}", flush=True)
-    pa, pb, gt = np.concatenate(pa_l), np.concatenate(pb_l), np.concatenate(gt_l)
-    pe = args.weight * pa + (1 - args.weight) * pb
+    pa, pb = np.concatenate(pa_l), np.concatenate(pb_l)
+    la, lb = np.concatenate(la_l), np.concatenate(lb_l)
+    gt = np.concatenate(gt_l)
+    thresholds = sorted(set(args.thresholds))
 
-    print(f"\n=== ensemble on val seq {d['val_sequences']} (w={args.weight}) ===")
-    print(f"{'setting':>12} {'best IoU':>9} {'@th':>5} {'Prec':>8} {'Rec':>8}")
-    for name, prob in [("A alone", pa), ("B alone", pb), ("ensemble", pe)]:
-        best = max(((iou_at(prob, gt, th), th) for th in THRESHOLDS),
+    def best_at(prob):
+        return max(((iou_at(prob, gt, th), th) for th in thresholds),
                    key=lambda x: x[0][0])
-        (iou, prec, rec), th = best
-        print(f"{name:>12} {iou:9.4f} {th:5.2f} {prec:8.4f} {rec:8.4f}")
-    print("\n  ensemble threshold sweep:")
-    for th in THRESHOLDS:
-        iou, prec, rec = iou_at(pe, gt, th)
-        print(f"    th={th:.2f}  IoU={iou:.4f}  P={prec:.4f}  R={rec:.4f}")
+
+    rows = []
+    for fusion in ("prob", "logit"):
+        for w in args.weights:
+            if not 0 <= w <= 1:
+                raise ValueError("ensemble weights must be in [0, 1]")
+            if fusion == "prob":
+                pred = w * pa + (1.0 - w) * pb
+            else:
+                margin = w * la + (1.0 - w) * lb
+                pred = 1.0 / (1.0 + np.exp(-np.clip(margin, -50, 50)))
+            (iou, prec, rec), th = best_at(pred)
+            rows.append((iou, fusion, w, th, prec, rec))
+
+    print(f"\n=== ensemble on val seq {d['val_sequences']} ===")
+    print(f"{'fusion':>8} {'w(A)':>6} {'best IoU':>9} {'@th':>5} "
+          f"{'Prec':>8} {'Rec':>8}")
+    for iou, fusion, w, th, prec, rec in rows:
+        print(f"{fusion:>8} {w:6.2f} {iou:9.4f} {th:5.2f} "
+              f"{prec:8.4f} {rec:8.4f}")
+    iou, fusion, w, th, prec, rec = max(rows)
+    print(f"\nBEST: IoU={iou:.4f} fusion={fusion} w(A)={w:.2f} "
+          f"threshold={th:.2f} P={prec:.4f} R={rec:.4f}")
 
 
 if __name__ == "__main__":
