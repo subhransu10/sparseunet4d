@@ -1,0 +1,272 @@
+From c61b091db02cce08c2488582f46eb3a43ee634f4 Mon Sep 17 00:00:00 2001
+From: subhransu10 <subhransusouravp@gmail.com>
+Date: Tue, 11 Aug 2026 12:34:06 +0200
+Subject: [PATCH] Add point-weighted motion training probe
+
+---
+ configs/dual_v16_pointweighted_ft.yaml | 50 ++++++++++++++++++++++++++
+ scripts/train.py                       |  4 ++-
+ sparseunet4d/datasets/collate.py       |  7 ++--
+ sparseunet4d/datasets/semantickitti.py |  2 ++
+ sparseunet4d/models/losses.py          | 49 ++++++++++++++++++-------
+ tools/test_sota_improvements.py        | 13 ++++++-
+ 6 files changed, 109 insertions(+), 16 deletions(-)
+ create mode 100644 configs/dual_v16_pointweighted_ft.yaml
+
+diff --git a/configs/dual_v16_pointweighted_ft.yaml b/configs/dual_v16_pointweighted_ft.yaml
+new file mode 100644
+index 0000000..93ce55d
+--- /dev/null
++++ b/configs/dual_v16_pointweighted_ft.yaml
+@@ -0,0 +1,50 @@
++# Align the training motion objective with the official point-level metric.
++# sqrt(point count) moderates the otherwise large near-field density imbalance;
++# the cap prevents a handful of dense voxels from dominating a batch.
++dataset:
++  root: /mnt/d/Subhransu workspace/Dataset/my_kitti_dataset/dataset/sequences
++  semantic_yaml: /mnt/d/Subhransu workspace/Dataset/my_kitti_dataset/dataset/sequences/semantic-kitti.yaml
++  train_sequences: [0, 1, 2, 3, 4, 5, 6, 7, 9, 10]
++  val_sequences: [8]
++  n_frames: 5
++  frame_offsets: [1, 2, 4, 8]
++  voxel_size: 0.1
++  point_range: 51.2
++  residual_feats: true
++  res_clip: 3.0
++  augment: false
++  inject_bank: /home/suba/sparseunet4d/mover_bank.npy
++  inject_prob: 0.4
++  inject_max_n: 2
++  all_frame_labels: true
++pose:
++  mode: gt
++  rot_std_deg: 0.0
++  trans_std_m: 0.0
++  seed: 0
++train:
++  batch_size: 2
++  iters: 12000
++  lr: 0.00005
++  weight_decay: 0.0001
++  val_every: 1000
++  warmup_iters: 250
++  lr_schedule: cosine
++  checkpoint_metric: point
++  checkpoint_thresholds: [0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90, 0.93, 0.95]
++loss:
++  motion_weight: 1.0
++  semantic_weight: 1.0
++  dice_weight: 1.0
++  moving_class_weight: 1.25
++  cluster_weight: 0.5
++  point_weight_exponent: 0.5
++  point_weight_cap: 8.0
++model:
++  use_cluster: true
++  cluster_link: 2
++  cluster_min_size: 3
++  cluster_cross_frame: false
++  cluster_feature_fusion: true
++  dual_branch: true
++  app_ch: 1
+diff --git a/scripts/train.py b/scripts/train.py
+index 2157f7a..0bc5302 100644
+--- a/scripts/train.py
++++ b/scripts/train.py
+@@ -68,7 +68,9 @@ def run_batch(model, batch, cfg, device, drift_batch=None):
+                              offset_gt=off.to(device) if off is not None else None,
+                              offset_mask=offm.to(device) if offm is not None else None,
+                              motion_instance=(batch["motion_instance"].to(device)
+-                                              if "motion_instance" in batch else None))
++                                              if "motion_instance" in batch else None),
++                             point_count=(batch["point_count"].to(device)
++                                          if "point_count" in batch else None))
+     return out, loss, parts
+ 
+ 
+diff --git a/sparseunet4d/datasets/collate.py b/sparseunet4d/datasets/collate.py
+index e8e74fd..2b8eb25 100644
+--- a/sparseunet4d/datasets/collate.py
++++ b/sparseunet4d/datasets/collate.py
+@@ -11,7 +11,7 @@ import torch
+ 
+ def me_collate(batch):
+     coords_list, feats_list, mot_list, sem_list, metas = [], [], [], [], []
+-    off_list, offm_list = [], []
++    off_list, offm_list, point_count_list = [], [], []
+     minst_list, instance_offset = [], 0
+     has_pm = "ref_point_voxel" in batch[0]
+     rpv_list, rpm_list = [], []
+@@ -25,6 +25,7 @@ def me_collate(batch):
+         sem_list.append(s["semantic"])
+         off_list.append(s["offset"])
+         offm_list.append(s["offset_mask"])
++        point_count_list.append(s.get("point_count", np.ones(len(c), np.float32)))
+         minst = s.get("motion_instance")
+         if minst is not None:
+             minst = minst.astype(np.int64, copy=True)
+@@ -46,9 +47,11 @@ def me_collate(batch):
+     semantic = torch.from_numpy(np.concatenate(sem_list, 0)).long()
+     offset = torch.from_numpy(np.concatenate(off_list, 0)).float()
+     offset_mask = torch.from_numpy(np.concatenate(offm_list, 0)).bool()
++    point_count = torch.from_numpy(np.concatenate(point_count_list, 0)).float()
+     out = {"coords": coords, "feats": feats,
+            "motion": motion, "semantic": semantic,
+-           "offset": offset, "offset_mask": offset_mask, "meta": metas}
++           "offset": offset, "offset_mask": offset_mask,
++           "point_count": point_count, "meta": metas}
+     if len(minst_list) == len(batch):
+         out["motion_instance"] = torch.from_numpy(
+             np.concatenate(minst_list, 0)).long()
+diff --git a/sparseunet4d/datasets/semantickitti.py b/sparseunet4d/datasets/semantickitti.py
+index 804962d..8cfe96b 100644
+--- a/sparseunet4d/datasets/semantickitti.py
++++ b/sparseunet4d/datasets/semantickitti.py
+@@ -445,6 +445,7 @@ class SemanticKITTI4D(Dataset):
+         uniq_coords, inv = np.unique(qcoords, axis=0, return_inverse=True)
+         inv = inv.reshape(-1)
+         G = uniq_coords.shape[0]
++        point_count = np.bincount(inv, minlength=G).astype(np.float32)
+         rep = np.empty(G, dtype=np.int64)
+         order = np.argsort(mot, kind="stable")   # ascending: ignore(-1),static(0),moving(1)
+         rep[inv[order]] = order                  # last write per voxel = max-priority point
+@@ -460,6 +461,7 @@ class SemanticKITTI4D(Dataset):
+             "offset": off[rep].astype(np.float32),    # (M, 3) float32
+             "offset_mask": omask[rep],                # (M,)  bool
+             "motion_instance": minst[rep],            # ref moving instance, else -1
++            "point_count": point_count,               # raw points represented by voxel
+             "meta": (seq, ref),
+         }
+         if self.return_point_map:
+diff --git a/sparseunet4d/models/losses.py b/sparseunet4d/models/losses.py
+index 01dfa6b..709d2e4 100644
+--- a/sparseunet4d/models/losses.py
++++ b/sparseunet4d/models/losses.py
+@@ -11,20 +11,31 @@ import torch.nn.functional as F
+ IGNORE_INDEX = -1
+ 
+ 
+-def weighted_ce(logits, labels, class_weights=None):
+-    return F.cross_entropy(logits, labels, weight=class_weights,
+-                           ignore_index=IGNORE_INDEX)
++def weighted_ce(logits, labels, class_weights=None, sample_weights=None):
++    if sample_weights is None:
++        return F.cross_entropy(logits, labels, weight=class_weights,
++                               ignore_index=IGNORE_INDEX)
++    mask = labels != IGNORE_INDEX
++    if mask.sum() == 0:
++        return logits.sum() * 0.0
++    per = F.cross_entropy(logits[mask], labels[mask], reduction="none")
++    effective = sample_weights[mask].to(per.dtype)
++    if class_weights is not None:
++        effective = effective * class_weights[labels[mask]]
++    return (per * effective).sum() / effective.sum().clamp(min=1e-6)
+ 
+ 
+-def dice_moving(logits, labels, eps=1.0):
++def dice_moving(logits, labels, eps=1.0, sample_weights=None):
+     """Soft Dice on the moving class (index 1), reference voxels only."""
+     mask = labels != IGNORE_INDEX
+     if mask.sum() == 0:
+         return logits.sum() * 0.0
+     p = torch.softmax(logits[mask], dim=1)[:, 1]
+     g = (labels[mask] == 1).float()
+-    num = 2 * (p * g).sum()
+-    den = p.sum() + g.sum() + eps
++    weight = (torch.ones_like(p) if sample_weights is None
++              else sample_weights[mask].to(p.dtype))
++    num = 2 * (weight * p * g).sum()
++    den = (weight * p).sum() + (weight * g).sum() + eps
+     return 1.0 - num / den
+ 
+ 
+@@ -43,18 +54,27 @@ def consistency_loss(logits_clean, logits_drift):
+ 
+ def total_loss(out, motion_labels, semantic_labels, cfg,
+                out_drift=None, offset_gt=None, offset_mask=None,
+-               motion_instance=None):
++               motion_instance=None, point_count=None):
+     w = None
+     if cfg.get("moving_class_weight", 1.0) != 1.0:
+         w = torch.tensor([1.0, cfg["moving_class_weight"]],
+                          device=out["motion_logits"].device)
+-    l_mot = weighted_ce(out["motion_logits"], motion_labels, w)
++    point_weight = None
++    exponent = float(cfg.get("point_weight_exponent", 0.0))
++    if point_count is not None and exponent > 0:
++        point_weight = point_count.float().clamp(min=1.0).pow(exponent)
++        cap = cfg.get("point_weight_cap")
++        if cap is not None:
++            point_weight = point_weight.clamp(max=float(cap))
++    l_mot = weighted_ce(out["motion_logits"], motion_labels, w, point_weight)
+     l_sem = weighted_ce(out["semantic_logits"], semantic_labels)
+     if cfg.get("tversky", False):
+         l_dice = tversky_moving(out["motion_logits"], motion_labels,
+-                                cfg.get("tversky_alpha", 0.3), cfg.get("tversky_beta", 0.7))
++                                cfg.get("tversky_alpha", 0.3), cfg.get("tversky_beta", 0.7),
++                                sample_weights=point_weight)
+     else:
+-        l_dice = dice_moving(out["motion_logits"], motion_labels)
++        l_dice = dice_moving(out["motion_logits"], motion_labels,
++                             sample_weights=point_weight)
+     loss = (cfg.get("motion_weight", 1.0) * l_mot
+             + cfg.get("semantic_weight", 1.0) * l_sem
+             + cfg.get("dice_weight", 1.0) * l_dice)
+@@ -133,14 +153,19 @@ def cluster_moving_loss(cluster_logits, cluster_row_id, motion_labels):
+     target = (pos[has] / cnt[has].clamp(min=1.0) > 0.5).float()
+     return F.binary_cross_entropy_with_logits(cluster_logits[has], target)
+ 
+-def tversky_moving(logits, labels, alpha=0.3, beta=0.7, eps=1.0):
++def tversky_moving(logits, labels, alpha=0.3, beta=0.7, eps=1.0,
++                   sample_weights=None):
+     """Tversky on moving class (idx 1), ref voxels only. beta>alpha favours RECALL."""
+     mask = labels != IGNORE_INDEX
+     if mask.sum() == 0:
+         return logits.sum() * 0.0
+     p = torch.softmax(logits[mask], dim=1)[:, 1]
+     g = (labels[mask] == 1).float()
+-    tp = (p * g).sum(); fp = (p * (1 - g)).sum(); fn = ((1 - p) * g).sum()
++    weight = (torch.ones_like(p) if sample_weights is None
++              else sample_weights[mask].to(p.dtype))
++    tp = (weight * p * g).sum()
++    fp = (weight * p * (1 - g)).sum()
++    fn = (weight * (1 - p) * g).sum()
+     return 1.0 - (tp + eps) / (tp + alpha * fp + beta * fn + eps)
+ 
+ def offset_l1(offset_pred, offset_gt, offset_mask):
+diff --git a/tools/test_sota_improvements.py b/tools/test_sota_improvements.py
+index 880ba05..b72d7ea 100644
+--- a/tools/test_sota_improvements.py
++++ b/tools/test_sota_improvements.py
+@@ -12,7 +12,7 @@ from sparseunet4d.datasets.residual_features import (
+     temporal_residual_blocks,
+ )
+ from sparseunet4d.utils.metrics import MovingThresholdMeter
+-from sparseunet4d.models.losses import instance_detection_loss
++from sparseunet4d.models.losses import instance_detection_loss, weighted_ce
+ 
+ 
+ def _scan(moving_range):
+@@ -71,8 +71,19 @@ def test_instance_detection_loss_reaches_every_object():
+     assert logits.grad[4].abs().sum() > 0
+ 
+ 
++def test_point_weighted_ce_matches_repeated_points():
++    logits = torch.tensor([[2.0, -1.0], [-1.0, 2.0]])
++    labels = torch.tensor([0, 1])
++    counts = torch.tensor([3.0, 1.0])
++    weighted = weighted_ce(logits, labels, sample_weights=counts)
++    repeated = torch.nn.functional.cross_entropy(
++        logits[torch.tensor([0, 0, 0, 1])], labels[torch.tensor([0, 0, 0, 1])])
++    torch.testing.assert_close(weighted, repeated)
++
++
+ if __name__ == "__main__":
+     test_dense_temporal_residuals()
+     test_threshold_grid_covers_high_confidence_models()
+     test_instance_detection_loss_reaches_every_object()
++    test_point_weighted_ce_matches_repeated_points()
+     print("SOTA improvement regression tests passed")
+-- 
+2.44.0.windows.1
+
