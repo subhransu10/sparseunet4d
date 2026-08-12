@@ -1,0 +1,29 @@
+  frame 0/4071
+  frame 500/4071
+  frame 1000/4071
+  frame 1500/4071
+  frame 2000/4071
+  frame 2500/4071
+  frame 3000/4071
+  frame 3500/4071
+  frame 4000/4071
+
+=== MapMOS + SparseUNet fusion, val seq [8] ===
+Sparse: w(A)=0.50, pool=point; outside-range policy=MapMOS/abstain
+MapMOS ignored positive predictions: 103432
+
+          mode       IoU    @th     Prec      Rec         TP        FP        FN
+        mapmos    0.8521     --   0.9682   0.8766    1458773     47923    205348
+        sparse    0.7884   0.97   0.9431   0.8278    1377522     83186    286599
+         union    0.8760   1.00   0.9528   0.9158    1524021     75537    140100
+  intersection    0.7680   0.97   0.9825   0.7786    1295759     23036    368362
+    oracle-add    0.8998   0.97   0.9698   0.9257    1540536     47923    123585
+   oracle-veto    0.8667   1.00   0.9871   0.8766    1458773     18993    205348
+ oracle-choice    0.9131   0.97   0.9853   0.9257    1540536     23036    123585
+
+Fusion deltas at each actual mode's best threshold:
+  union: recovered TP=65248, added FP=27614, IoU delta=+0.0240
+  intersection: removed FP=24887, lost TP=163014, IoU delta=-0.0841
+
+BEST ACTUAL: union IoU=0.8760
+ORACLE CHOICE CEILING: 0.9131 @ sparse threshold 0.97

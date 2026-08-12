@@ -1,0 +1,7 @@
+initialized model weights from runs/dual_v16_pointweighted_ft/best.pt
+[iter 0] lr=1.20e-07 loss=0.365 motion=0.000 semantic=0.360 dice=0.003 cluster=0.002 instance=0.000 | data 5.6s compute 2.4s
+[iter 50] lr=6.12e-06 loss=0.265 motion=0.005 semantic=0.220 dice=0.018 cluster=0.045 instance=0.000 | data 0.0s compute 62.5s
+[iter 100] lr=1.21e-05 loss=1.091 motion=0.000 semantic=0.155 dice=0.936 cluster=0.001 | data 0.0s compute 61.2s
+[iter 150] lr=1.81e-05 loss=1.261 motion=0.000 semantic=0.253 dice=1.000 cluster=0.015 | data 0.0s compute 59.9s
+[iter 200] lr=2.41e-05 loss=0.352 motion=0.001 semantic=0.317 dice=0.026 cluster=0.017 instance=0.000 | data 0.0s compute 59.2s
+[iter 250] lr=3.00e-05 loss=0.315 motion=0.001 semantic=0.275 dice=0.036 cluster=0.007 instance=0.000 | data 0.0s compute 59.3s
