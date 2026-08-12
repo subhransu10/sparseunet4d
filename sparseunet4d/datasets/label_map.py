@@ -46,9 +46,15 @@ def split_label(label: np.ndarray):
 
 
 def to_motion_labels(sem_raw: np.ndarray) -> np.ndarray:
-    """Raw semantic ids -> binary motion labels {0 static, 1 moving}."""
-    moving = np.isin(sem_raw, list(MOVING_IDS))
-    return moving.astype(np.int64)
+    """Raw semantic ids -> official MOS labels {-1 ignore, 0 static, 1 moving}.
+
+    SemanticKITTI raw ids 0 (unlabelled) and 1 (outlier) are excluded by the
+    official MOS evaluation protocol.
+    """
+    out = np.zeros(sem_raw.shape, dtype=np.int64)
+    out[np.isin(sem_raw, list(MOVING_IDS))] = 1
+    out[np.isin(sem_raw, [0, 1])] = IGNORE_INDEX
+    return out
 
 
 def to_semantic_labels(sem_raw: np.ndarray, lut: np.ndarray) -> np.ndarray:
