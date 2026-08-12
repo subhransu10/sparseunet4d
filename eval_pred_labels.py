@@ -32,6 +32,9 @@ def main():
                     help="raw ids meaning 'moving' in the predictions")
     ap.add_argument("--range-clip", type=float, default=None,
                     help="e.g. 51.2 to match our in-range protocol")
+    ap.add_argument("--ignore-gt-ids", type=int, nargs="*", default=[0, 1],
+                    help="raw GT ids excluded from scoring (official: 0 1); "
+                         "pass with no values for strict all-return scoring")
     args = ap.parse_args()
 
     lab_dir = os.path.join(args.gt_seq, "labels")
@@ -50,7 +53,9 @@ def main():
         keep = np.ones(len(sem_raw), bool)
         if args.range_clip is not None:
             xyz = _read_scan(os.path.join(velo_dir, f.replace(".label", ".bin")))[:, :3]
-            keep = np.all(np.abs(xyz) < args.range_clip, axis=1)
+            keep &= np.all(np.abs(xyz) < args.range_clip, axis=1)
+        if args.ignore_gt_ids:
+            keep &= ~np.isin(sem_raw, args.ignore_gt_ids)
         g = np.isin(sem_raw, list(MOVING_IDS)) & keep
         p = np.isin(pr_raw, args.moving_pred_ids) & keep
         tp += int((p & g).sum()); fp += int((p & ~g).sum())
@@ -60,7 +65,8 @@ def main():
 
     iou = tp / max(tp + fp + fn, 1)
     print(f"\n=== {args.pred_dir} ===")
-    print(f"scans scored: {len(preds)}  range_clip={args.range_clip}")
+    print(f"scans scored: {len(preds)}  range_clip={args.range_clip} "
+          f"ignored_gt_ids={args.ignore_gt_ids}")
     print(f"moving IoU: {iou:.4f}   P={tp/max(tp+fp,1):.4f} "
           f"R={tp/max(tp+fn,1):.4f}   TP={tp} FP={fp} FN={fn}")
 
