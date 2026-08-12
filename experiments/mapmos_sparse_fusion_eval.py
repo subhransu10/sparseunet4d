@@ -62,7 +62,7 @@ def best_row(name, tp, fp, total_pos, thresholds):
 
 
 def print_row(row):
-    print(f"{row['name']:>14} {row['iou']:9.4f} {row['threshold']:6.2f} "
+    print(f"{row['name']:>14} {row['iou']:9.4f} {row['threshold']:8.5f} "
           f"{row['precision']:8.4f} {row['recall']:8.4f} "
           f"{row['tp']:10d} {row['fp']:9d} {row['fn']:9d}")
 
