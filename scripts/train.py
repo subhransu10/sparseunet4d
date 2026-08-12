@@ -14,7 +14,8 @@ Usage:
       --save-dir runs/big [--resume runs/big/last.pt]
 """
 from __future__ import annotations
-import os, sys, math, time, argparse, yaml
+import os, sys, math, time, argparse, random, yaml
+import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
@@ -24,6 +25,27 @@ from sparseunet4d.models.model import SparseUNet4D
 from sparseunet4d.models.losses import total_loss
 from sparseunet4d.utils.metrics import IoUMeter, MovingThresholdMeter
 
+
+
+def seed_everything(seed, deterministic=False):
+    """Seed model initialization, data order and worker-local randomness."""
+    seed = int(seed)
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    if deterministic:
+        torch.use_deterministic_algorithms(True, warn_only=True)
+        torch.backends.cudnn.benchmark = False
+    return seed
+
+
+def seed_worker(worker_id):
+    """Derive reproducible NumPy/Python seeds from the DataLoader seed."""
+    worker_seed = torch.initial_seed() % (2**32)
+    np.random.seed(worker_seed)
+    random.seed(worker_seed)
 
 
 def build_model(cfg_model, in_ch, num_sem):
@@ -241,6 +263,17 @@ if __name__ == "__main__":
     args = ap.parse_args()
     cfg = _load_cfg(args.config)
 
+    train_seed = seed_everything(
+        cfg["train"].get("seed", 0),
+        cfg["train"].get("deterministic", False),
+    )
+    loader_generator = torch.Generator()
+    loader_generator.manual_seed(train_seed)
+    print(
+        f"training seed={train_seed} "
+        f"deterministic={cfg['train'].get('deterministic', False)}"
+    )
+
     from sparseunet4d.datasets import SemanticKITTI4D, me_collate
     d = cfg["dataset"]; p = cfg["pose"]; nw = cfg["train"].get("num_workers", 8)
     train_ds = SemanticKITTI4D(d["root"], d["train_sequences"], d["n_frames"],
@@ -257,7 +290,8 @@ if __name__ == "__main__":
         inject_all_frame_labels=d.get("inject_all_frame_labels", False))
     train_loader = DataLoader(train_ds, batch_size=cfg["train"]["batch_size"],
         shuffle=True, collate_fn=me_collate, num_workers=nw,
-        persistent_workers=(nw > 0), pin_memory=True)
+        persistent_workers=(nw > 0), pin_memory=True,
+        worker_init_fn=seed_worker, generator=loader_generator)
     val_ds = SemanticKITTI4D(d["root"], d["val_sequences"], d["n_frames"],
         d["voxel_size"], d["semantic_yaml"], "gt", 0.0, 0.0, p["seed"], d["point_range"],
         residual_feats=d.get("residual_feats", True), res_clip=d.get("res_clip", 3.0),

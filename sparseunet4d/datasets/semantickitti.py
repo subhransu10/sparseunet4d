@@ -222,7 +222,10 @@ class SemanticKITTI4D(Dataset):
         target area is already occupied in the reference frame. Must run BEFORE
         residual computation so injected points get real residuals.
         """
-        rng = np.random.default_rng()
+        # The DataLoader seeds NumPy independently in each worker.
+        # Drawing this seed from that worker-local stream makes injection
+        # reproducible while retaining a fresh generator per sample.
+        rng = np.random.default_rng(np.random.randint(0, 2**32, dtype=np.uint32))
         if rng.random() > self.inject_prob or len(frame_xyz) < 2:
             return
         bank = self._ensure_bank()
