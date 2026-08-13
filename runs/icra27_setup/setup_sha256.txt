@@ -1,0 +1,2 @@
+2e498d8b081b87f124f1e6372d659c582aecbd3d9e2f2e78d98c862c2c865278  configs/icra27_backbone_dev07.yaml
+b4b1b6d7b755e6bf7ebac6ae93351ede35b6cf2c602f2b4ba6be1bb33101e497  mover_bank_icra_train.npy

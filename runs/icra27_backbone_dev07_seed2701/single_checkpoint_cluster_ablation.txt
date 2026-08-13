@@ -1,0 +1,15 @@
+  frame 0/1101
+  frame 500/1101
+  frame 1000/1101
+
+=== learned-cluster ensemble, val seq [7] ===
+ensemble: w(A)=1.00; A supplies cluster proposals
+      pool  best IoU    @th     Prec      Rec
+     point    0.7056   0.00   0.9523   0.7314
+      mean    0.7073   0.01   0.9558   0.7313
+     top25    0.7063   0.08   0.9607   0.7273
+     top10    0.7060   0.15   0.9625   0.7260
+       max    0.7118   0.00   0.9280   0.7535
+   learned    0.7034   0.05   0.9591   0.7252
+
+BEST: IoU=0.7118 pool=max threshold=0.00 P=0.9280 R=0.7535

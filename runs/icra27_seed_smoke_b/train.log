@@ -1,0 +1,5 @@
+training seed=2701 deterministic=True
+[iter 0] lr=2.00e-07 loss=5.155 motion=0.776 semantic=3.005 dice=0.992 cluster=0.764 | data 1.9s compute 3.4s
+  [val @ 2] moving_iou=0.0246@th0.55 [point] (argmax 0.0076) P=0.033 R=0.088 voxel=0.0204 point=0.0246 semantic_miou=0.0022
+  [val @ 2] new best -> best.pt (0.0246 @ th 0.55)
+done @ iter 2. best moving_iou=0.0246  ckpts in runs/icra27_seed_smoke_b

@@ -1,0 +1,2 @@
+ae616948398fdd88ad547e3a04d379bcac4f9c79c094fe0e9e23a2df4bd5be9c  /home/suba/sparseunet4d/runs/icra27_backbone_dev07_seed2701/best.pt
+246ae037dc4af1acdca876a323cdbb7d377f64164c4e250bb5c41fd71562f128  /home/suba/sparseunet4d/runs/icra27_backbone_dev07_seed2701/last.pt

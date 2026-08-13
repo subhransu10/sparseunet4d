@@ -1,0 +1,12 @@
+seq 00: 122 instances (bank=122)
+seq 01: 150 instances (bank=272)
+seq 02: 140 instances (bank=412)
+seq 03: 27 instances (bank=439)
+seq 04: 132 instances (bank=571)
+seq 05: 150 instances (bank=721)
+seq 06: 41 instances (bank=762)
+seq 09: 124 instances (bank=886)
+seq 10: 70 instances (bank=956)
+
+bank: 956 instances | displacement over widest offset: median 6.24m  p10 0.69m  p90 13.66m
+saved -> /home/suba/sparseunet4d/mover_bank_icra_train.npy

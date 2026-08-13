@@ -1,0 +1,4 @@
+sample rows=274,629 feat_width=5 ref_residual_nonzero=0.974 context_nonzero=0.000 moving_instances=0
+mover_bank=956 class_hist={252: 653, 253: 89, 254: 110, 255: 73, 258: 20, 259: 11}
+checkpoint strict-load passed: runs/dual_v16_pointweighted_ft/best.pt
+preflight passed

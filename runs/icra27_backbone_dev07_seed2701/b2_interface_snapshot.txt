@@ -1,0 +1,548 @@
+"""Pose handling for SemanticKITTI 4D stacking.
+
+This module is the heart of the ego-motion contribution. A `PoseProvider`
+returns, for any frame index in a sequence, the 4x4 SE(3) pose of the
+*velodyne* sensor expressed in the world frame (frame-0 frame). The dataset
+uses these poses to register past scans into the reference frame.
+
+Two providers are implemented:
+  - GTPoseProvider:    the ground-truth SuMa poses shipped with KITTI odometry.
+  - DriftyPoseProvider: wraps a base provider and injects *compounding* SE(3)
+                        drift so that frames further from the reference are
+                        more misaligned -- the realistic failure mode that
+                        breaks registration-dependent 4D MOS.
+
+KITTI convention notes (these are the usual gotchas):
+  - poses.txt stores a 3x4 row-major matrix per line: the pose of the *camera*
+    in the world frame.
+  - calib.txt 'Tr:' maps velodyne -> camera coordinates.
+  - To get the velodyne pose in world:  T_velo_world = inv(Tr) @ T_cam @ Tr
+"""
+
+from __future__ import annotations
+import os
+import numpy as np
+
+
+def _read_calib_Tr(calib_path: str) -> np.ndarray:
+    """Read the velodyne->camera transform 'Tr' as a 4x4 matrix."""
+    Tr = None
+    with open(calib_path, "r") as f:
+        for line in f:
+            if line.startswith("Tr:") or line.startswith("Tr "):
+                vals = [float(v) for v in line.strip().split()[1:]]
+                Tr = np.array(vals, dtype=np.float64).reshape(3, 4)
+                break
+    if Tr is None:
+        raise ValueError(f"'Tr' not found in {calib_path}")
+    Tr4 = np.eye(4, dtype=np.float64)
+    Tr4[:3, :4] = Tr
+    return Tr4
+
+
+def _read_poses(poses_path: str) -> np.ndarray:
+    """Read poses.txt -> (F, 4, 4) camera-in-world matrices."""
+    raw = np.loadtxt(poses_path, dtype=np.float64)
+    if raw.ndim == 1:
+        raw = raw[None, :]
+    F = raw.shape[0]
+    poses = np.tile(np.eye(4, dtype=np.float64), (F, 1, 1))
+    poses[:, :3, :4] = raw.reshape(F, 3, 4)
+    return poses
+
+
+def _se3_exp(xi: np.ndarray) -> np.ndarray:
+    """Exponential map se(3)->SE(3). xi = [rx, ry, rz, tx, ty, tz] (rot in rad)."""
+    w = xi[:3]
+    v = xi[3:]
+    theta = np.linalg.norm(w)
+    W = np.array([[0, -w[2], w[1]],
+                  [w[2], 0, -w[0]],
+                  [-w[1], w[0], 0]], dtype=np.float64)
+    if theta < 1e-9:
+        R = np.eye(3) + W
+        V = np.eye(3)
+    else:
+        A = np.sin(theta) / theta
+        B = (1 - np.cos(theta)) / (theta ** 2)
+        C = (1 - A) / (theta ** 2)
+        R = np.eye(3) + A * W + B * (W @ W)
+        V = np.eye(3) + B * W + C * (W @ W)
+    T = np.eye(4, dtype=np.float64)
+    T[:3, :3] = R
+    T[:3, 3] = V @ v
+    return T
+
+
+class GTPoseProvider:
+    """Ground-truth velodyne-in-world poses for one sequence."""
+
+    def __init__(self, seq_dir: str):
+        Tr = _read_calib_Tr(os.path.join(seq_dir, "calib.txt"))
+        Tr_inv = np.linalg.inv(Tr)
+        cam_poses = _read_poses(os.path.join(seq_dir, "poses.txt"))
+        # velodyne pose in world = inv(Tr) @ T_cam @ Tr
+        self.poses = np.einsum("ij,fjk,kl->fil", Tr_inv, cam_poses, Tr)
+
+    def __len__(self):
+        return len(self.poses)
+
+    def pose(self, frame_idx: int) -> np.ndarray:
+        return self.poses[frame_idx]
+
+    def relative(self, src_idx: int, ref_idx: int) -> np.ndarray:
+        """Transform that maps a point in `src` frame into `ref` frame."""
+        return np.linalg.inv(self.poses[ref_idx]) @ self.poses[src_idx]
+
+
+class DriftyPoseProvider:
+    """Wraps a base provider and injects compounding odometry drift.
+
+    We model online-odometry error as a random walk in se(3): each frame adds a
+    small incremental error to its predecessor, so the *accumulated* error grows
+    with distance from frame 0 -- mirroring real drift. `rot_std`/`trans_std`
+    are per-frame increments (deg, m). A fixed `seed` makes evaluation
+    deterministic per sequence so robustness curves are reproducible.
+    """
+
+    def __init__(self, base: GTPoseProvider, rot_std_deg: float,
+                 trans_std_m: float, seed: int = 0):
+        self.base = base
+        self.seed = int(seed)
+        self.rot_std = np.deg2rad(rot_std_deg)   # radians, per-frame-step
+        self.trans_std = float(trans_std_m)      # metres, per-frame-step
+        self.poses = base.poses                  # unused; relative() is the model
+
+    def __len__(self):
+        return len(self.poses)
+
+    def pose(self, frame_idx: int) -> np.ndarray:
+        return self.poses[frame_idx]
+
+    def relative(self, src_idx, ref_idx):
+        T = self.base.relative(src_idx, ref_idx)          # true relative
+        k = abs(ref_idx - src_idx)                        # frames apart
+        rng = np.random.default_rng((self.seed, ref_idx, src_idx))
+        xi = np.concatenate([
+            rng.normal(0.0, self.rot_std * np.sqrt(k), 3),   # walk over k steps
+            rng.normal(0.0, self.trans_std * np.sqrt(k), 3),
+        ])
+        return T @ _se3_exp(xi)          # error in the SOURCE sensor frame
+
+
+class FilePoseProvider:
+    """Poses from a KITTI-format poses file (12 floats per row, 3x4 row-major).
+
+    Covers two paper-critical sources with one class:
+      - real odometry (e.g. KISS-ICP output)  -> IoU under REAL pose error
+      - pre-generated drifted trajectories (make_drifted_poses.py) -> the SAME
+        corrupted poses can be fed to external baselines (4DMOS), so ours and
+        theirs are compared under IDENTICAL noise.
+
+    frame='camera' (KITTI convention: poses of the left camera; pass calib to
+    convert to velodyne, exactly like GTPoseProvider) or frame='velodyne'
+    (file already in the sensor frame; no conversion).
+    """
+
+    def __init__(self, poses_path: str, frame: str = "camera",
+                 calib_path: str | None = None):
+        raw = _read_poses(poses_path)
+        if frame == "camera":
+            assert calib_path, "camera-frame pose file needs calib.txt (Tr)"
+            Tr = _read_calib_Tr(calib_path)
+            Tr_inv = np.linalg.inv(Tr)
+            self.poses = np.einsum("ij,fjk,kl->fil", Tr_inv, raw, Tr)
+        elif frame == "velodyne":
+            self.poses = raw
+        else:
+            raise ValueError(f"unknown frame: {frame}")
+
+    def __len__(self):
+        return len(self.poses)
+
+    def pose(self, frame_idx: int) -> np.ndarray:
+        return self.poses[frame_idx]
+
+    def relative(self, src_idx: int, ref_idx: int) -> np.ndarray:
+        return np.linalg.inv(self.poses[ref_idx]) @ self.poses[src_idx]
+
+
+def build_pose_provider(seq_dir: str, mode: str = "gt",
+                        rot_std_deg: float = 0.0, trans_std_m: float = 0.0,
+                        seed: int = 0):
+    gt = GTPoseProvider(seq_dir)
+    if mode == "gt":
+        return gt
+    if mode == "drift":
+        return DriftyPoseProvider(gt, rot_std_deg, trans_std_m, seed)
+    raise ValueError(f"unknown pose mode: {mode}")
+"""Two-checkpoint ensemble eval (point-level, official granularity).
+
+The temporal and aug models score ~equal IoU with different P/R balances, i.e.
+partially decorrelated errors — the textbook case where averaging their
+moving-probabilities beats either. One pass over val: both models run on the
+same batch, per-point probs fused as w*A + (1-w)*B, thresholds swept.
+
+Both checkpoints must share the architecture of --config's model section.
+
+Usage:
+  cd ~/MinkowskiEngine
+  SU4D_BACKEND=me PYTHONPATH=~/MinkowskiEngine:~/sparseunet4d python3 \
+    ~/sparseunet4d/ensemble_eval.py \
+    --config ~/sparseunet4d/configs/residual_temporal.yaml \
+    --ckpt-a ~/sparseunet4d/runs/residual_temporal/best.pt \
+    --ckpt-b ~/sparseunet4d/runs/residual_pro_aug/best.pt
+"""
+import os, sys, argparse, yaml
+import numpy as np
+import torch
+sys.path.insert(0, os.path.expanduser("~/sparseunet4d"))
+from sparseunet4d.datasets import SemanticKITTI4D, me_collate
+from sparseunet4d.models.backend import backend
+from torch.utils.data import DataLoader
+
+THRESHOLDS = [x / 100 for x in range(5, 100, 5)] + [0.93]
+WEIGHTS = [0.0, 0.2, 0.4, 0.5, 0.6, 0.8, 1.0]
+
+
+def load_model(ckpt, d, m, dev):
+    n_frames = d.get("n_frames", 4)
+    k = (n_frames - 1) * (2 if d.get("residual_validity", False) else 1)
+    in_ch = 1 + k if d.get("residual_feats", True) else 1
+    from scripts.train import build_model
+    model = build_model(m, in_ch, d.get("num_semantic", 20)).to(dev).eval()
+    ck = torch.load(ckpt, map_location=dev)
+    model.load_state_dict(ck["model"] if "model" in ck else ck, strict=True)
+    return model
+
+
+def to_st(batch, dev):
+    coords = batch["coords"].to(dev); feats = batch["feats"].to(dev)
+    if backend() == "me":
+        import MinkowskiEngine as ME
+        return ME.SparseTensor(feats, coordinates=coords)
+    from sparseunet4d.models.backend import ST
+    return ST(feats, coords)
+
+
+def threshold_counts(scores, positive, thresholds):
+    """Return exact positive/negative prediction counts without N*T arrays."""
+    # bin k means exactly k sorted thresholds are <= the score.  Therefore the
+    # number predicted positive at threshold j is sum(hist[j + 1:]).
+    bins = np.searchsorted(thresholds, scores, side="right")
+    pos_hist = np.bincount(bins[positive], minlength=len(thresholds) + 1)
+    neg_hist = np.bincount(bins[~positive], minlength=len(thresholds) + 1)
+    pos_ge = np.cumsum(pos_hist[::-1], dtype=np.int64)[::-1][1:]
+    neg_ge = np.cumsum(neg_hist[::-1], dtype=np.int64)[::-1][1:]
+    return pos_ge, neg_ge
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--config", required=True)
+    ap.add_argument("--ckpt-a", required=True)
+    ap.add_argument("--ckpt-b", required=True)
+    ap.add_argument("--weights", type=float, nargs="+", default=WEIGHTS,
+                    help="weights on checkpoint A")
+    ap.add_argument("--thresholds", type=float, nargs="+", default=THRESHOLDS)
+    args = ap.parse_args()
+    with open(args.config) as f:
+        cfg = yaml.safe_load(f); cfg.setdefault("model", {})
+    d = cfg["dataset"]; p = cfg["pose"]; m = cfg["model"]
+    dev = "cuda" if torch.cuda.is_available() else "cpu"
+
+    ds = SemanticKITTI4D(d["root"], d["val_sequences"], d["n_frames"],
+        d["voxel_size"], d["semantic_yaml"], "gt", 0.0, 0.0, p["seed"],
+        d["point_range"], residual_feats=d.get("residual_feats", True),
+        res_clip=d.get("res_clip", 3.0), frame_offsets=d.get("frame_offsets"),
+        feat_rep=d.get("feat_rep", "label"),
+        residual_validity=d.get("residual_validity", False),
+        residual_all_frames=d.get("residual_all_frames", False),
+        return_point_map=True)
+    loader = DataLoader(ds, batch_size=1, shuffle=False, collate_fn=me_collate,
+                        num_workers=4)
+    ma = load_model(args.ckpt_a, d, m, dev)
+    mb = load_model(args.ckpt_b, d, m, dev)
+
+    thresholds = np.asarray(sorted(set(args.thresholds)), dtype=np.float32)
+    weights = np.asarray(args.weights, dtype=np.float32)
+    if np.any((weights < 0) | (weights > 1)):
+        raise ValueError("ensemble weights must be in [0, 1]")
+
+    # [fusion, weight, threshold]. Accumulating confusion counts per frame
+    # avoids retaining hundreds of millions of point predictions in RAM.
+    tp = np.zeros((2, len(weights), len(thresholds)), dtype=np.int64)
+    fp = np.zeros_like(tp)
+    total_pos = 0
+    with torch.no_grad():
+        for bi, batch in enumerate(loader):
+            x = to_st(batch, dev)
+            logits_a = ma(x)["motion_logits"]
+            logits_b = mb(x)["motion_logits"]
+            prob_a = torch.softmax(logits_a, 1)[:, 1].cpu().numpy()
+            prob_b = torch.softmax(logits_b, 1)[:, 1].cpu().numpy()
+            margin_a = (logits_a[:, 1] - logits_a[:, 0]).cpu().numpy()
+            margin_b = (logits_b[:, 1] - logits_b[:, 0]).cpu().numpy()
+            rpv = batch["ref_point_voxel"].numpy()
+            pa, pb = prob_a[rpv], prob_b[rpv]
+            la, lb = margin_a[rpv], margin_b[rpv]
+            gt = batch["ref_point_motion"].numpy()
+            valid = gt != -1
+            positive = gt[valid] == 1
+            total_pos += int(positive.sum())
+            pa, pb, la, lb = pa[valid], pb[valid], la[valid], lb[valid]
+
+            for wi, w in enumerate(weights):
+                scores = w * pa + (1.0 - w) * pb
+                batch_tp, batch_fp = threshold_counts(
+                    scores, positive, thresholds)
+                tp[0, wi] += batch_tp
+                fp[0, wi] += batch_fp
+
+                margin = w * la + (1.0 - w) * lb
+                scores = 1.0 / (1.0 + np.exp(-np.clip(margin, -50, 50)))
+                batch_tp, batch_fp = threshold_counts(
+                    scores, positive, thresholds)
+                tp[1, wi] += batch_tp
+                fp[1, wi] += batch_fp
+            if bi % 500 == 0:
+                print(f"  frame {bi}/{len(loader)}", flush=True)
+
+    rows = []
+    for fi, fusion in enumerate(("prob", "logit")):
+        for wi, w in enumerate(weights):
+            fn = total_pos - tp[fi, wi]
+            denom = tp[fi, wi] + fp[fi, wi] + fn
+            ious = tp[fi, wi] / np.maximum(denom, 1)
+            ti = int(np.argmax(ious))
+            tpi, fpi, fni = (int(tp[fi, wi, ti]), int(fp[fi, wi, ti]),
+                             int(fn[ti]))
+            iou = float(ious[ti])
+            prec = tpi / max(tpi + fpi, 1)
+            rec = tpi / max(tpi + fni, 1)
+            rows.append((iou, fusion, float(w), float(thresholds[ti]),
+                         prec, rec))
+
+    print(f"\n=== ensemble on val seq {d['val_sequences']} ===")
+    print(f"{'fusion':>8} {'w(A)':>6} {'best IoU':>9} {'@th':>5} "
+          f"{'Prec':>8} {'Rec':>8}")
+    for iou, fusion, w, th, prec, rec in rows:
+        print(f"{fusion:>8} {w:6.2f} {iou:9.4f} {th:5.2f} "
+              f"{prec:8.4f} {rec:8.4f}")
+    iou, fusion, w, th, prec, rec = max(rows)
+    print(f"\nBEST: IoU={iou:.4f} fusion={fusion} w(A)={w:.2f} "
+          f"threshold={th:.2f} P={prec:.4f} R={rec:.4f}")
+
+
+if __name__ == "__main__":
+    main()
+        # voxel FEATURE representative: 'label' = legacy (motion-priority point,
+        # unreproducible at inference); 'residual' = argmax |residual| (label-
+        # free -> train/inference identical). Labels ALWAYS use motion priority.
+        assert feat_rep in ("label", "residual")
+        self.feat_rep = feat_rep
+
+        self.lut = None
+        if semantic_yaml is not None:
+            self.lut, self.lmap_inv, self.num_sem = \
+                load_semantic_learning_map(semantic_yaml)
+
+        # index = list of (seq, ref_frame_idx); cache one pose provider per seq
+        self.index = []
+        self.pose_providers = {}
+        for seq in sequences:
+            seq_dir = os.path.join(root, f"{seq:02d}")
+            velo_dir = os.path.join(seq_dir, "velodyne")
+            n = len([f for f in os.listdir(velo_dir) if f.endswith(".bin")])
+            self.pose_providers[seq] = build_pose_provider(
+                seq_dir, pose_mode, rot_std_deg, trans_std_m, pose_seed)
+            for ref in range(n):
+                self.index.append((seq, ref))
+
+    def __len__(self):
+        return len(self.index)
+
+    def _frame_paths(self, seq, frame):
+        seq_dir = os.path.join(self.root, f"{seq:02d}")
+        bin_p = os.path.join(seq_dir, "velodyne", f"{frame:06d}.bin")
+        lab_p = os.path.join(seq_dir, "labels", f"{frame:06d}.label")
+        return bin_p, lab_p
+
+    def _ensure_bank(self):
+        if self._bank is None:
+            self._bank = np.load(self.inject_bank_path, allow_pickle=True)
+            if len(self._bank) == 0:
+                raise ValueError(f"empty mover bank: {self.inject_bank_path}")
+            if self.inject_class_boost:
+                weights = np.asarray([
+                    self.inject_class_boost.get(int(x["sem_raw"]), 1.0)
+                    for x in self._bank
+                ], dtype=np.float64)
+                self._bank_prob = weights / weights.sum()
+        return self._bank
+
+    def _inject_movers(self, stack_offsets, frame_xyz, coords_all, feats_all,
+                       mot_all, sem_all, off_all, omask_all, minst_all):
+        """Paste 1..inject_max_n bank movers into this stack.
+
+        One rigid yaw+translation per instance is applied to EVERY frame of its
+        trajectory, so its ego-compensated displacement (what the residual
+        c, s = np.cos(th), np.sin(th)
+        Rz = np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]], np.float32)
+        fx = -1.0 if rng.random() < 0.5 else 1.0
+        fy = -1.0 if rng.random() < 0.5 else 1.0
+        Fl = np.diag([fx, fy, 1.0]).astype(np.float32)
+        sc = float(rng.uniform(self.aug_scale[0], self.aug_scale[1]))
+        return (sc * (Rz @ Fl)).astype(np.float32)
+
+    def __getitem__(self, i):
+        seq, ref = self.index[i]
+        provider = self.pose_providers[seq]
+        # temporal stack: (t_idx, frame, offset). t_idx 0 == reference (offset 0).
+        # Early-in-sequence frames whose offset runs before frame 0 are dropped;
+        # their residual channels become zeros (handled below), keeping K fixed.
+        stack = [(t, ref - o, o) for t, o in enumerate([0] + self.offsets)
+                 if ref - o >= 0]
+        stack_offsets = [o for (_, _, o) in stack]
+        # one shared transform for the whole stack: a fixed TTA view if given,
+        # else a random train-time augmentation, else none.
+        if self.fixed_transform is not None:
+            aug_R = self.fixed_transform
+        elif self.augment:
+            aug_R = self._aug_matrix()
+        else:
+            aug_R = None
+
+        coords_all, feats_all, mot_all, sem_all = [], [], [], []
+        off_all, omask_all, minst_all = [], [], []
+        frame_xyz = []  # keep clipped xyz per frame for residual computation
+        for t_idx, f, o in stack:
+            bin_p, lab_p = self._frame_paths(seq, f)
+            scan = _read_scan(bin_p)
+            xyz, remission = scan[:, :3], scan[:, 3:4]
+
+            # register past frame into reference frame using (possibly drifted) pose
+            if t_idx != 0:
+                T = provider.relative(f, ref)
+                xyz = _transform(xyz, T).astype(np.float32)
+
+            # augment AFTER registration so the same transform hits every frame
+            # (relative alignment preserved -> static surfaces still cancel).
+            if aug_R is not None:
+                xyz = (xyz @ aug_R.T).astype(np.float32)
+
+            # range clip
+            if self.point_range is not None:
+                m = np.all(np.abs(xyz) < self.point_range, axis=1)
+                xyz, remission = xyz[m], remission[m]
+            else:
+                m = np.ones(len(xyz), dtype=bool)
+
+            # labels: reference frame always; past frames too under P3
+            # (all_frame_labels) -- each from its OWN label file.
+            if (t_idx == 0 or self.all_frame_labels) and os.path.exists(lab_p):
+                sem_raw, inst_raw = split_label(_read_label(lab_p))   # keep inst now
+                sem_raw = sem_raw[m]
+                inst_raw = inst_raw[m]                                # clip same mask
+                mot = to_motion_labels(sem_raw)
+                sem = (to_semantic_labels(sem_raw, self.lut)
+                       if self.lut is not None
+                       else np.full(len(sem_raw), IGNORE_INDEX))
+                if t_idx == 0:
+                    # offset head stays reference-only (its target is the
+                    # reference-frame instance centre)
+                    off, omask = _gt_offsets_panoptic(xyz, sem_raw, inst_raw)
+                    minst = np.where((mot == 1) & (inst_raw > 0),
+                                     inst_raw.astype(np.int64),
+                                     IGNORE_INDEX)
+                else:
+                    off = np.zeros((len(xyz), 3), np.float32)
+                    omask = np.zeros(len(xyz), bool)
+                    minst = np.full(len(xyz), IGNORE_INDEX, np.int64)
+            else:
+                mot = np.full(len(xyz), IGNORE_INDEX, dtype=np.int64)
+                sem = np.full(len(xyz), IGNORE_INDEX, dtype=np.int64)
+                off = np.zeros((len(xyz), 3), np.float32)
+                omask = np.zeros(len(xyz), bool)
+                minst = np.full(len(xyz), IGNORE_INDEX, np.int64)
+
+            frame_xyz.append(xyz)
+            t_col = np.full((len(xyz), 1), t_idx, dtype=np.float32)
+            coords_all.append(np.concatenate([xyz, t_col], axis=1))
+            feats_all.append(remission)
+            mot_all.append(mot)
+            sem_all.append(sem)
+            off_all.append(off)
+            omask_all.append(omask)
+            minst_all.append(minst)
+
+        # trajectory-consistent mover injection (train only) — before residuals
+        # so injected points participate in the range-image comparison.
+        if self.inject_bank_path is not None and self.inject_prob > 0:
+            self._inject_movers(stack_offsets, frame_xyz, coords_all, feats_all,
+                                mot_all, sem_all, off_all, omask_all, minst_all)
+
+        coords = np.concatenate(coords_all, 0)
+        feats = np.concatenate(feats_all, 0)
+        mot = np.concatenate(mot_all, 0)
+        sem = np.concatenate(sem_all, 0)
+        off = np.concatenate(off_all, 0)
+        omask = np.concatenate(omask_all, 0)
+        minst = np.concatenate(minst_all, 0)
+
+        # ---- signed residual-image motion features (fixed width K) ------------
+        # Reference points get real residuals vs each past offset; past-frame
+        # points get 0 (they exist only for context). K is constant regardless
+        # of how many past frames actually loaded (early-in-sequence -> zeros).
+        K = self.n_frames - 1
+        if self.residual_feats and K > 0:
+            res_blocks = temporal_residual_blocks(
+                frame_xyz, stack_offsets, self.offsets, clip=self.res_clip,
+                return_validity=self.residual_validity,
+                all_frames=self.residual_all_frames)
+            residuals = np.concatenate(res_blocks, 0)
+            feats = np.concatenate([feats, residuals], axis=1)  # (total, 1+K)
+        # -----------------------------------------------------------------------
+
+        # quantize spatial dims to voxel grid; keep t integer as-is
+        qcoords = coords.copy()
+        qcoords[:, :3] = np.floor(coords[:, :3] / self.voxel_size)
+        qcoords = qcoords.astype(np.int32)
+
+        # collapse duplicate (x,y,z,t) voxels. Each voxel takes ALL its labels
+        # from a single representative point chosen by motion priority
+        # (moving > static > ignore), so a voxel is MOVING whenever ANY of its
+        # points is moving. Previously we kept the first point and silently
+        # dropped moving labels at mixed voxels -> a bias against the moving
+        # class in both the GT and the training signal.
+        uniq_coords, inv = np.unique(qcoords, axis=0, return_inverse=True)
+        inv = inv.reshape(-1)
+        G = uniq_coords.shape[0]
+        point_count = np.bincount(inv, minlength=G).astype(np.float32)
+        rep = np.empty(G, dtype=np.int64)
+        order = np.argsort(mot, kind="stable")   # ascending: ignore(-1),static(0),moving(1)
+        rep[inv[order]] = order                  # last write per voxel = max-priority point
+        # feature representative: label-free residual priority reproduces
+        # bit-identically on the robot/streaming path; labels stay motion-max.
+        rep_f = (residual_priority_rep(inv, G, feats)
+                 if self.feat_rep == "residual" else rep)
+        out = {
+            "coords": uniq_coords,                    # (M, 4) int32  (x, y, z, t)
+            "feats": feats[rep_f],                    # (M, 1+K) float32
+            "motion": mot[rep],                       # (M,)  int64
+            "semantic": sem[rep],                     # (M,)  int64
+            "offset": off[rep].astype(np.float32),    # (M, 3) float32
+            "offset_mask": omask[rep],                # (M,)  bool
+            "motion_instance": minst[rep],            # ref moving instance, else -1
+            "point_count": point_count,               # raw points represented by voxel
+            "meta": (seq, ref),
+        }
+        if self.return_point_map:
+            # full-resolution reference-frame labels + the voxel row each point
+            # maps to, so eval can propagate voxel predictions back to EVERY
+            # point (official point-level MOS protocol) rather than scoring the
+            # deduplicated voxels. Reference frame is block 0 of the stack.
+            n_ref = len(frame_xyz[0])
+            out["ref_point_motion"] = mot[:n_ref].astype(np.int64)
+            out["ref_point_voxel"] = inv[:n_ref].astype(np.int64)
+        return out

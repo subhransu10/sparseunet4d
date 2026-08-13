@@ -1,0 +1,111 @@
+  frame 0/1101
+  frame 200/1101
+  frame 400/1101
+  frame 600/1101
+  frame 800/1101
+  frame 1000/1101
+
+Prediction path: frozen network + current clusters + causal odometry memory. GT is diagnostics-only.
+B2 alpha=0.98 gate=1.50 max_age=1 velocity_alpha=0.50
+
+==== overall (1101 frames) ====
+          mode         th       IoU      Prec       Rec         TP         FP         FN
+      B0-point    0.00500    0.7056    0.9523    0.7314     780997      39083     286787
+    B1-cluster    0.00100    0.7118    0.9280    0.7535     804522      62428     263262
+     B2-memory    0.99980    0.7512    0.9489    0.7829     835953      45033     231831
+ B3-hysteresis       dual    0.7539    0.9285    0.8004     854696      65865     213088
+
+==== B2 error transitions ====
+B0->B2: recovered moving points=73699  lost moving points=18743
+         added false positives=26782  removed false positives=20832
+         net TP=+54956  net FP=+5950
+B1->B2: recovered moving points=60583  lost moving points=29152
+         added false positives=25120  removed false positives=42515
+         net TP=+31431  net FP=-17395
+B0->B3: recovered moving points=73699  lost moving points=0
+         added false positives=26782  removed false positives=0
+         net TP=+73699  net FP=+26782
+B2->B3: recovered moving points=18743  lost moving points=0
+         added false positives=20832  removed false positives=0
+         net TP=+18743  net FP=+20832
+
+==== by RANGE ====
+
+B0-point
+    bin(m)   recall     prec      GTmov         FN         FP
+   0-10       0.689    0.986     631942     196615       6192
+  10-20       0.794    0.926     349139      71800      22014
+  20-30       0.838    0.869      61300       9917       7724
+  30-40       0.745    0.845      18321       4666       2501
+  40-52       0.465    0.835       7082       3789        652
+
+B1-cluster
+    bin(m)   recall     prec      GTmov         FN         FP
+   0-10       0.720    0.968     631942     176843      15263
+  10-20       0.802    0.894     349139      69018      33138
+  20-30       0.848    0.841      61300       9295       9796
+  30-40       0.756    0.806      18321       4474       3323
+  40-52       0.487    0.792       7082       3632        908
+
+B2-memory
+    bin(m)   recall     prec      GTmov         FN         FP
+   0-10       0.784    0.974     631942     136703      12964
+  10-20       0.783    0.932     349139      75761      19914
+  20-30       0.853    0.840      61300       8989       9986
+  30-40       0.690    0.871      18321       5680       1878
+  40-52       0.337    0.891       7082       4698        291
+
+B3-hysteresis
+    bin(m)   recall     prec      GTmov         FN         FP
+   0-10       0.799    0.967     631942     127247      17323
+  10-20       0.799    0.899     349139      70032      31520
+  20-30       0.880    0.802      61300       7365      13333
+  30-40       0.746    0.819      18321       4655       3030
+  40-52       0.465    0.833       7082       3789        659
+
+==== by MOVER CLASS ====
+         class      GTpts     B0-point   B1-cluster    B2-memory B3-hysteresis
+           car     820241        0.731        0.749        0.812        0.821
+         truck     157344        0.657        0.699        0.607        0.657
+        person      61802        0.809        0.835        0.749        0.809
+     bicyclist      28397        0.994        0.995        0.989        0.994
+
+==== by INSTANCE-FRAME ====
+Each observation is one labelled object instance in one frame; these are not persistent GT tracks.
+moving points without positive instance id: 6905
+
+B0-point
+            bucket    #obs    %obs   %mov pts
+   missed entirely     252    14.5       19.9
+     mostly missed      55     3.2        3.0
+   partially found     197    11.4       15.3
+       fully found    1230    70.9       61.8
+
+B1-cluster
+            bucket    #obs    %obs   %mov pts
+   missed entirely     238    13.7       19.0
+     mostly missed      53     3.1        2.6
+   partially found     182    10.5       14.1
+       fully found    1261    72.7       64.3
+
+B2-memory
+            bucket    #obs    %obs   %mov pts
+   missed entirely     306    17.6       13.6
+     mostly missed      52     3.0        3.3
+   partially found     243    14.0       16.9
+       fully found    1133    65.3       66.2
+
+B3-hysteresis
+            bucket    #obs    %obs   %mov pts
+   missed entirely     224    12.9       13.3
+     mostly missed      54     3.1        2.6
+   partially found     201    11.6       15.4
+       fully found    1255    72.4       68.7
+
+B0 missed instance-frames recovered by B2 (>=10% detected):
+  observations: 28 / 252
+  moving points: 70513 / 211094
+
+B0 missed instance-frames recovered by B3 (>=10% detected):
+  observations: 28 / 252
+  moving points: 70513 / 211094

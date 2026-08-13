@@ -1,0 +1,28 @@
+  frame 0/1101
+  frame 200/1101
+  frame 400/1101
+  frame 600/1101
+  frame 800/1101
+  frame 1000/1101
+
+=== causal temporal object memory, val seq [7] ===
+Prediction path uses network outputs + odometry only; GT is metric-only.
+max_age=3 velocity_alpha=0.50 size_weight=0.50 class_penalty=1.00
+      mode   alpha    gate       IoU       @th     Prec      Rec
+     point      --      --    0.7056   0.00500   0.9523   0.7314
+       max      --      --    0.7118   0.00100   0.9280   0.7535
+    memory    0.50    1.50    0.7148   0.00500   0.9380   0.7502
+    memory    0.50    2.50    0.7133   0.00500   0.9375   0.7489
+    memory    0.50    4.00    0.7127   0.00500   0.9364   0.7489
+    memory    0.70    1.50    0.7178   0.00300   0.9264   0.7612
+    memory    0.70    2.50    0.7173   0.00300   0.9268   0.7604
+    memory    0.70    4.00    0.7169   0.00300   0.9259   0.7605
+    memory    0.85    1.50    0.7293   0.00300   0.9138   0.7832
+    memory    0.85    2.50    0.7280   0.00300   0.9109   0.7839
+    memory    0.85    4.00    0.7278   0.00300   0.9106   0.7838
+    memory    0.95    1.50    0.7385   0.10000   0.9100   0.7967
+    memory    0.95    2.50    0.7363   0.10000   0.9059   0.7973
+    memory    0.95    4.00    0.7361   0.10000   0.9054   0.7974
+
+BEST: IoU=0.7385 mode=memory alpha=0.95 gate=1.5 threshold=0.10000 P=0.9100 R=0.7967
+B2 delta over point: +0.0329
