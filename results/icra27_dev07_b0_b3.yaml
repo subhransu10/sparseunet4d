@@ -1,0 +1,76 @@
+experiment: ICRA27 clean-split causal temporal object memory
+protocol:
+  train_sequences:
+  - 0
+  - 1
+  - 2
+  - 3
+  - 4
+  - 5
+  - 6
+  - 9
+  - 10
+  development_sequences:
+  - 7
+  sealed_sequences:
+  - 8
+  metric: official point-level moving IoU
+  ignored_raw_labels:
+  - 0
+  - 1
+  ground_truth_pose: true
+backbone:
+  checkpoint: runs/icra27_backbone_dev07_seed2701/best.pt
+  best_iteration: 22000
+  training_seed: 2701
+  git_commit_at_training: c7f7ebdb37da5a386c5d5194bbad918e6457bb8b
+frozen_method:
+  alpha: 0.98
+  association_gate_m: 1.5
+  maximum_age_frames: 1
+  velocity_alpha: 0.5
+  size_weight: 0.5
+  class_mismatch_penalty: 1.0
+  point_threshold: 0.005
+  cluster_threshold: 0.001
+  memory_threshold: 0.9998
+  hysteresis: B0 prediction OR B2 prediction
+development_results:
+  B0_point:
+    iou: 0.7056
+    precision: 0.9523
+    recall: 0.7314
+    tp: 780997
+    fp: 39083
+    fn: 286787
+  B1_cluster_completion:
+    iou: 0.7118
+    precision: 0.928
+    recall: 0.7535
+    tp: 804522
+    fp: 62428
+    fn: 263262
+  B2_temporal_memory:
+    iou: 0.7512
+    precision: 0.9489
+    recall: 0.7829
+    tp: 835953
+    fp: 45033
+    fn: 231831
+  B3_asymmetric_hysteresis:
+    iou: 0.7539
+    precision: 0.9285
+    recall: 0.8004
+    tp: 854696
+    fp: 65865
+    fn: 213088
+mechanism_evidence:
+  B0_to_B3_recovered_moving_points: 73699
+  B0_to_B3_added_false_positives: 26782
+  B0_missed_instance_frames_recovered: 28
+  moving_points_in_recovered_instance_frames: 70513
+  near_0_10m_recall_B0: 0.689
+  near_0_10m_recall_B3: 0.799
+  car_recall_B0: 0.731
+  car_recall_B3: 0.821
+current_source_commit: 8f1cf9053e41b91d77b88b9df081b80cb89da39c
