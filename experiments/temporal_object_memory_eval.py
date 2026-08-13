@@ -77,6 +77,15 @@ class Track:
         return self.centroid_world + self.velocity_world * dt
 
 
+@dataclasses.dataclass(frozen=True)
+class AssociationEvidence:
+    """Label-free evidence attached to one current object proposal."""
+    matched: bool
+    distance_m: float
+    size_log_ratio: float
+    class_consistent: bool
+
+
 def build_proposals(voxel_score: np.ndarray, cluster_ids: np.ndarray,
                     semantic_pred: np.ndarray, coords5: np.ndarray,
                     pose: np.ndarray, voxel_size: float) -> list[Proposal]:
@@ -126,11 +135,13 @@ class TemporalObjectMemory:
         self.tracks: dict[int, Track] = {}
         self.next_track_id = 0
         self.sequence = None
+        self.last_evidence: dict[int, AssociationEvidence] = {}
 
     def reset(self, sequence=None):
         self.tracks.clear()
         self.next_track_id = 0
         self.sequence = sequence
+        self.last_evidence = {}
 
     def _new_track(self, proposal: Proposal, frame: int) -> Track:
         track = Track(
@@ -150,6 +161,7 @@ class TemporalObjectMemory:
                proposals: Iterable[Proposal]) -> dict[int, float]:
         """Update state and return memory-adjusted score per current cluster."""
         proposals = list(proposals)
+        self.last_evidence = {}
         if self.sequence != sequence:
             self.reset(sequence)
 
@@ -185,6 +197,16 @@ class TemporalObjectMemory:
         output = {}
         for ti, pi in matches:
             track, proposal = tracks[ti], proposals[pi]
+            match_distance = float(distance[ti, pi])
+            size_log_ratio = float(abs(np.log(
+                (track.radius + 1e-3) / (proposal.radius + 1e-3))))
+            class_consistent = track.semantic_class == proposal.semantic_class
+            self.last_evidence[proposal.cluster_id] = AssociationEvidence(
+                matched=True,
+                distance_m=match_distance,
+                size_log_ratio=size_log_ratio,
+                class_consistent=class_consistent,
+            )
             dt = max(1, int(frame) - int(track.last_frame))
             observed_velocity = ((proposal.centroid_world - track.centroid_world)
                                  / dt)
@@ -211,7 +233,38 @@ class TemporalObjectMemory:
                 continue
             self._new_track(proposal, frame)
             output[proposal.cluster_id] = proposal.score
+            self.last_evidence[proposal.cluster_id] = AssociationEvidence(
+                matched=False,
+                distance_m=float("inf"),
+                size_log_ratio=float("inf"),
+                class_consistent=False,
+            )
         return output
+
+
+def reliability_filter(cluster_scores: dict[int, float],
+                       evidence: dict[int, AssociationEvidence],
+                       association_gate: float,
+                       maximum_size_ratio: float = 2.0) -> dict[int, float]:
+    """Keep scores backed by a strict, physically plausible association.
+
+    The normal matcher permits a bounded object-radius allowance.  B4 is more
+    conservative: additions must satisfy the unexpanded metric gate, preserve
+    semantic class, and change object radius by no more than the declared
+    multiplicative ratio.  No labels or evaluation statistics enter the rule.
+    """
+    if maximum_size_ratio < 1.0:
+        raise ValueError("maximum_size_ratio must be at least 1")
+    max_size_log = float(np.log(maximum_size_ratio))
+    return {
+        cluster_id: score
+        for cluster_id, score in cluster_scores.items()
+        if cluster_id in evidence
+        and evidence[cluster_id].matched
+        and evidence[cluster_id].class_consistent
+        and evidence[cluster_id].distance_m <= association_gate
+        and evidence[cluster_id].size_log_ratio <= max_size_log
+    }
 
 
 def cluster_complete(point_score: np.ndarray, point_cluster: np.ndarray,

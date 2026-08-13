@@ -7,6 +7,7 @@ from experiments.temporal_object_memory_eval import (
     Proposal,
     TemporalObjectMemory,
     cluster_complete,
+    reliability_filter,
 )
 
 
@@ -29,10 +30,15 @@ def main():
     weak = memory.update(7, 1, [proposal(3, 0.2, 0.001)])
     assert weak[3] > 0.001, weak
     assert weak[3] < 0.9, weak
+    reliable = reliability_filter(
+        weak, memory.last_evidence, association_gate=1.0)
+    assert 3 in reliable, reliable
 
     # A far proposal must start a new track and receive no memory boost.
     far = memory.update(7, 2, [proposal(4, 20.0, 0.002)])
     assert far[4] == 0.002, far
+    assert not reliability_filter(
+        far, memory.last_evidence, association_gate=1.0), far
 
     # Changing sequence resets all causal state.
     reset = memory.update(8, 0, [proposal(0, 0.2, 0.003)])

@@ -27,6 +27,7 @@ from experiments.temporal_object_memory_eval import (
     TemporalObjectMemory,
     build_proposals,
     cluster_complete,
+    reliability_filter,
 )
 from sparseunet4d.datasets import SemanticKITTI4D, me_collate
 from sparseunet4d.datasets.label_map import split_label
@@ -38,7 +39,8 @@ MOV_NAME = {
     256: "on-rails", 257: "bus", 258: "truck", 259: "other-vehicle",
 }
 RANGE_BINS = [(0, 10), (10, 20), (20, 30), (30, 40), (40, 52)]
-MODES = ("B0-point", "B1-cluster", "B2-memory", "B3-hysteresis")
+MODES = ("B0-point", "B1-cluster", "B2-memory", "B3-hysteresis",
+         "B4-reliable")
 
 
 class Diagnostics:
@@ -62,6 +64,8 @@ class Diagnostics:
             "B1->B2": np.zeros(4, np.int64),
             "B0->B3": np.zeros(4, np.int64),
             "B2->B3": np.zeros(4, np.int64),
+            "B0->B4": np.zeros(4, np.int64),
+            "B3->B4": np.zeros(4, np.int64),
         }
 
     def update(self, predictions, gt_motion, sem_raw, inst_raw, radius):
@@ -86,12 +90,14 @@ class Diagnostics:
                 self.class_fn[mode][int(raw_id)] += int(
                     (~pred & selected).sum())
 
-        b0, b1, b2, b3 = predictions
+        b0, b1, b2, b3, b4 = predictions
         comparisons = {
             "B0->B2": (b0, b2),
             "B1->B2": (b1, b2),
             "B0->B3": (b0, b3),
             "B2->B3": (b2, b3),
+            "B0->B4": (b0, b4),
+            "B3->B4": (b3, b4),
         }
         for label, (source, target) in comparisons.items():
             self.transitions[label] += [
@@ -122,7 +128,8 @@ class Diagnostics:
             iou = tp / max(tp + fp + fn, 1)
             precision = tp / max(tp + fp, 1)
             recall = tp / max(tp + fn, 1)
-            threshold_text = ("dual" if mode == "B3-hysteresis"
+            threshold_text = ("dual" if mode in
+                              ("B3-hysteresis", "B4-reliable")
                               else f"{thresholds[index]:.5f}")
             print(f"{mode:>14} {threshold_text:>10} {iou:9.4f} "
                   f"{precision:9.4f} {recall:9.4f} {tp:10d} {fp:10d} "
@@ -198,7 +205,7 @@ class Diagnostics:
                       f"{100*n_points[selected].sum()/max(n_points.sum(),1):10.1f}")
 
         b0_missed = fractions[:, 0] < 0.1
-        for mode_index, label in ((2, "B2"), (3, "B3")):
+        for mode_index, label in ((2, "B2"), (3, "B3"), (4, "B4")):
             recovered = b0_missed & (fractions[:, mode_index] >= 0.1)
             print(f"\nB0 missed instance-frames recovered by {label} "
                   "(>=10% detected):")
@@ -221,6 +228,8 @@ def main():
     parser.add_argument("--velocity-alpha", type=float, default=0.5)
     parser.add_argument("--size-weight", type=float, default=0.5)
     parser.add_argument("--class-mismatch-penalty", type=float, default=1.0)
+    parser.add_argument("--reliability-max-size-ratio", type=float,
+                        default=2.0)
     parser.add_argument("--max-frames", type=int, default=0,
                         help="zero evaluates every frame")
     args = parser.parse_args()
@@ -258,7 +267,7 @@ def main():
     )
     diagnostics = Diagnostics()
     thresholds = (args.point_threshold, args.cluster_threshold,
-                  args.memory_threshold, float("nan"))
+                  args.memory_threshold, float("nan"), float("nan"))
     frames = 0
 
     with torch.no_grad():
@@ -278,6 +287,12 @@ def main():
                 proposal.cluster_id: proposal.score for proposal in proposals
             }
             memory_scores = memory.update(sequence, frame, proposals)
+            reliable_scores = reliability_filter(
+                memory_scores,
+                memory.last_evidence,
+                association_gate=args.association_gate,
+                maximum_size_ratio=args.reliability_max_size_ratio,
+            )
 
             point_voxel = batch["ref_point_voxel"].numpy()
             point_score = voxel_score[point_voxel]
@@ -286,6 +301,8 @@ def main():
                 point_score, point_cluster, current_scores)
             temporal_score = cluster_complete(
                 point_score, point_cluster, memory_scores)
+            reliable_temporal_score = cluster_complete(
+                point_score, point_cluster, reliable_scores)
             b0_prediction = point_score >= args.point_threshold
             b1_prediction = cluster_score >= args.cluster_threshold
             b2_prediction = temporal_score >= args.memory_threshold
@@ -293,8 +310,10 @@ def main():
             # retain a detection, but new object-level completion requires the
             # much stronger temporal-memory threshold.
             b3_prediction = b0_prediction | b2_prediction
+            b4_prediction = b0_prediction | (
+                reliable_temporal_score >= args.memory_threshold)
             predictions = [b0_prediction, b1_prediction, b2_prediction,
-                           b3_prediction]
+                           b3_prediction, b4_prediction]
 
             sequence_dir = os.path.join(d["root"], f"{sequence:02d}")
             scan = _read_scan(os.path.join(
@@ -320,6 +339,8 @@ def main():
           "memory. GT is diagnostics-only.")
     print(f"B2 alpha={args.alpha:.2f} gate={args.association_gate:.2f} "
           f"max_age={args.max_age} velocity_alpha={args.velocity_alpha:.2f}")
+    print("B4 reliability: matched, class-consistent, strict gate, "
+          f"size ratio<={args.reliability_max_size_ratio:.2f}")
     diagnostics.print_report(thresholds, frames)
 
 

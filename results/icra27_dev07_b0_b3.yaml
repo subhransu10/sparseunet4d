@@ -64,6 +64,13 @@ development_results:
     tp: 854696
     fp: 65865
     fn: 213088
+  B4_reliability_gate:
+    iou: 0.753962603713163
+    precision: 0.928562115789542
+    recall: 0.800389404598683
+    tp: 854643
+    fp: 65751
+    fn: 213141
 mechanism_evidence:
   B0_to_B3_recovered_moving_points: 73699
   B0_to_B3_added_false_positives: 26782
@@ -74,3 +81,15 @@ mechanism_evidence:
   car_recall_B0: 0.731
   car_recall_B3: 0.821
 current_source_commit: 8f1cf9053e41b91d77b88b9df081b80cb89da39c
+model_selection:
+  selected_method: B3_asymmetric_hysteresis
+  reason: B4 improves IoU by only 0.000029 while adding association complexity; B3
+    is retained as the simpler statistically indistinguishable method.
+  development_is_frozen: true
+  no_further_sequence_07_tuning: true
+negative_ablations:
+  B4_reliability_gate:
+    removed_false_positives_vs_B3: 114
+    lost_true_positives_vs_B3: 53
+    iou_delta_vs_B3: 2.9066965898e-05
+    accepted_as_final: false
