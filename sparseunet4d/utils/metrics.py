@@ -97,3 +97,37 @@ class MovingThresholdMeter:
         return {"threshold": float(self.th[k]), "iou": float(iou[k]),
                 "prec": prec, "rec": rec,
                 "iou_argmax": float(iou[argmax_k])}
+
+
+def best_shared_worst(meters, pooled):
+    """Choose one threshold maximizing the worst per-sequence moving IoU."""
+    if len(meters) < 2:
+        raise ValueError(
+            "worst-sequence selection requires at least two sequences"
+        )
+    ordered = sorted(meters.items())
+    for _, meter in ordered:
+        if not torch.equal(meter.th, pooled.th):
+            raise ValueError(
+                "all sequence meters must use the same thresholds"
+            )
+    curves = torch.stack([meter.iou_curve() for _, meter in ordered])
+    worst = curves.min(dim=0).values
+    macro = curves.mean(dim=0)
+    candidates = torch.nonzero(worst == worst.max()).flatten()
+    k = int(candidates[torch.argmax(macro[candidates])])
+    tp, fp, fn = pooled.tp[k], pooled.fp[k], pooled.fn[k]
+    argmax_k = int(torch.argmin(torch.abs(pooled.th - 0.5)))
+    return {
+        "threshold": float(pooled.th[k]),
+        "iou": float(worst[k]),
+        "prec": float(tp / (tp + fp).clamp(min=1)),
+        "rec": float(tp / (tp + fn).clamp(min=1)),
+        "iou_argmax": float(curves[:, argmax_k].min()),
+        "pooled_iou": float(pooled.iou_curve()[k]),
+        "macro_iou": float(macro[k]),
+        "sequence_ious": {
+            int(sequence): float(curves[row, k])
+            for row, (sequence, _) in enumerate(ordered)
+        },
+    }

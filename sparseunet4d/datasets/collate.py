@@ -14,7 +14,7 @@ def me_collate(batch):
     off_list, offm_list, point_count_list = [], [], []
     minst_list, instance_offset = [], 0
     has_pm = "ref_point_voxel" in batch[0]
-    rpv_list, rpm_list = [], []
+    rpv_list, rpm_list, rpb_list = [], [], []
     voxel_offset = 0                       # rows already placed in the batch tensor
     for b, s in enumerate(batch):
         c = s["coords"]
@@ -40,6 +40,7 @@ def me_collate(batch):
             # shift each sample's voxel indices into the concatenated row space
             rpv_list.append(s["ref_point_voxel"] + voxel_offset)
             rpm_list.append(s["ref_point_motion"])
+            rpb_list.append(np.full(len(s["ref_point_voxel"]), b, np.int64))
         voxel_offset += len(c)
     coords = torch.from_numpy(np.concatenate(coords_list, 0)).int()
     feats = torch.from_numpy(np.concatenate(feats_list, 0)).float()
@@ -58,4 +59,5 @@ def me_collate(batch):
     if has_pm:
         out["ref_point_voxel"] = torch.from_numpy(np.concatenate(rpv_list, 0)).long()
         out["ref_point_motion"] = torch.from_numpy(np.concatenate(rpm_list, 0)).long()
+        out["ref_point_batch"] = torch.from_numpy(np.concatenate(rpb_list, 0)).long()
     return out

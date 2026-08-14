@@ -23,7 +23,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from sparseunet4d.models.backend import ST, backend
 from sparseunet4d.models.model import SparseUNet4D
 from sparseunet4d.models.losses import total_loss
-from sparseunet4d.utils.metrics import IoUMeter, MovingThresholdMeter
+from sparseunet4d.utils.metrics import (
+    IoUMeter, MovingThresholdMeter, best_shared_worst,
+)
 
 
 
@@ -101,6 +103,7 @@ def validate(model, loader, cfg, device, num_sem):
     model.eval()
     mos_voxel = MovingThresholdMeter(thresholds)
     mos_point = MovingThresholdMeter(thresholds)
+    sequence_point = {}
     sem = IoUMeter(num_sem)
     have_points = False
     with torch.no_grad():
@@ -109,8 +112,18 @@ def validate(model, loader, cfg, device, num_sem):
             mos_voxel.update(out["motion_logits"], batch["motion"].to(device))
             if "ref_point_voxel" in batch:
                 rows = batch["ref_point_voxel"].to(device)
-                mos_point.update(out["motion_logits"][rows],
-                                 batch["ref_point_motion"].to(device))
+                point_logits = out["motion_logits"][rows]
+                point_labels = batch["ref_point_motion"].to(device)
+                mos_point.update(point_logits, point_labels)
+                point_batch = batch["ref_point_batch"]
+                for sample_index, meta in enumerate(batch["meta"]):
+                    sequence = int(meta[0])
+                    meter = sequence_point.setdefault(
+                        sequence, MovingThresholdMeter(thresholds))
+                    sample_rows = torch.nonzero(
+                        point_batch == sample_index).flatten().to(device)
+                    meter.update(point_logits[sample_rows],
+                                 point_labels[sample_rows])
                 have_points = True
             sem.update(out["semantic_logits"], batch["semantic"].to(device))
     model.train()
@@ -121,15 +134,33 @@ def validate(model, loader, cfg, device, num_sem):
         raise ValueError("train.checkpoint_metric must be 'voxel' or 'point'")
     if metric == "point" and point is None:
         raise ValueError("point checkpoint metric requires return_point_map=True")
-    b = point if metric == "point" else voxel
+    reduction = cfg["train"].get("checkpoint_sequence_reduction", "pooled")
+    if reduction not in ("pooled", "worst"):
+        raise ValueError(
+            "train.checkpoint_sequence_reduction must be 'pooled' or 'worst'")
+    if reduction == "worst":
+        if metric != "point":
+            raise ValueError("worst-sequence selection currently requires point metric")
+        expected = set(int(x) for x in cfg["dataset"]["val_sequences"])
+        if set(sequence_point) != expected:
+            raise RuntimeError(
+                f"validation sequences differ: {set(sequence_point)} != {expected}")
+        b = best_shared_worst(sequence_point, mos_point)
+    else:
+        b = point if metric == "point" else voxel
     # 'moving_iou' is now the threshold-optimal IoU (used for model selection);
     # 'moving_iou_argmax' keeps the old argmax@0.5 number for comparison.
     return {"moving_iou": b["iou"], "moving_iou_argmax": b["iou_argmax"],
             "moving_threshold": b["threshold"], "semantic_miou": sem.miou(),
             "moving_prec": b["prec"], "moving_rec": b["rec"],
             "checkpoint_metric": metric,
+            "checkpoint_sequence_reduction": reduction,
+            "sequence_ious": b.get("sequence_ious", {}),
+            "macro_iou": b.get("macro_iou"),
+            "pooled_iou": b.get("pooled_iou", b["iou"]),
             "voxel_iou": voxel["iou"],
-            "point_iou": point["iou"] if point is not None else None}
+            "point_iou": (b.get("pooled_iou", point["iou"])
+                          if point is not None else None)}
 
 
 def save_ckpt(path, model, opt, cfg, it, best_iou, no_improve, best_threshold=0.5):
@@ -199,6 +230,14 @@ def train(cfg, train_loader, val_loader=None, device="cpu", drift_loader=None,
               f"voxel={v['voxel_iou']:.4f} "
               f"point={v['point_iou'] if v['point_iou'] is not None else float('nan'):.4f} "
               f"semantic_miou={v['semantic_miou']:.4f}", flush=True)
+        if v["sequence_ious"]:
+            sequence_text = " ".join(
+                f"seq{sequence:02d}={iou:.4f}"
+                for sequence, iou in sorted(v["sequence_ious"].items()))
+            print(
+                f"  [val @ {it}] robust-worst={v['moving_iou']:.4f} "
+                f"macro={v['macro_iou']:.4f} pooled={v['pooled_iou']:.4f} "
+                f"{sequence_text}", flush=True)
         if v["moving_iou"] > best_iou:
             best_iou = v["moving_iou"]; no_improve = 0; best_thr = v["moving_threshold"]
             save_ckpt(os.path.join(save_dir, "best.pt"), model, opt, cfg, it, best_iou,

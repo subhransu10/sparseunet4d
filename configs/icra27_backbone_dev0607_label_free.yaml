@@ -43,10 +43,11 @@ train:
   iters: 40000
   lr: 0.001
   weight_decay: 0.0001
-  val_every: 2000
+  val_every: 4000
   warmup_iters: 500
   lr_schedule: cosine
   checkpoint_metric: point
+  checkpoint_sequence_reduction: worst
   checkpoint_thresholds:
   - 0.05
   - 0.1
