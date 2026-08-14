@@ -1,0 +1,91 @@
+experiment: ICRA27 label-free causal temporal object memory
+protocol:
+  train_sequences:
+  - 0
+  - 1
+  - 2
+  - 3
+  - 4
+  - 5
+  - 6
+  - 9
+  - 10
+  development_sequences:
+  - 7
+  sealed_sequences:
+  - 8
+  metric: official point-level moving IoU
+  ignored_raw_labels:
+  - 0
+  - 1
+  ground_truth_pose: true
+  label_free_input_selection: true
+  development_is_frozen: true
+  sealed_sequence_evaluated: false
+backbone:
+  config: configs/icra27_backbone_dev07_label_free.yaml
+  checkpoint: runs/icra27_backbone_dev07_label_free_seed2701/best.pt
+  best_iteration: 40000
+  training_seed: 2701
+  feature_representative: residual
+  git_commit_at_training: 5c01b7e64a3322c5133d40fff2fb207fb3de3b7e
+selected_method:
+  name: B2 causal temporal object memory
+  reason: Highest predefined label-free development IoU; B3 is identical and B4 is
+    worse.
+  alpha: 0.98
+  association_gate_m: 1.5
+  maximum_age_frames: 1
+  velocity_alpha: 0.5
+  size_weight: 0.5
+  class_mismatch_penalty: 1.0
+  point_threshold: 0.003
+  cluster_threshold: 0.85
+  memory_threshold: 0.002
+development_results:
+  B0_point:
+    iou: 0.7175
+    precision: 0.9396
+    recall: 0.7521
+    tp: 803130
+    fp: 51610
+    fn: 264654
+  B1_cluster:
+    iou: 0.7211
+    precision: 0.95
+    recall: 0.7495
+    tp: 800317
+    fp: 42143
+    fn: 267467
+  B2_memory:
+    iou: 0.7684
+    precision: 0.8389
+    recall: 0.9014
+    tp: 962528
+    fp: 184795
+    fn: 105256
+  B3_hysteresis:
+    iou: 0.7684
+    precision: 0.8389
+    recall: 0.9014
+    tp: 962528
+    fp: 184795
+    fn: 105256
+  B4_reliable:
+    iou: 0.767
+    precision: 0.8414
+    recall: 0.8966
+    tp: 957381
+    fp: 180413
+    fn: 110403
+mechanism_evidence:
+  B0_to_B2_recovered_moving_points: 159398
+  B0_to_B2_added_false_positives: 133185
+  B0_missed_instance_frames: 226
+  B0_missed_instance_frames_recovered_by_B2: 111
+  moving_points_in_recovered_instance_frames: 157871
+  near_0_10m_recall_B0: 0.73
+  near_0_10m_recall_B2: 0.905
+  car_recall_B0: 0.765
+  car_recall_B2: 0.944
+source_commit_at_freeze: 5c01b7e64a3322c5133d40fff2fb207fb3de3b7e
