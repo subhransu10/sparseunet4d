@@ -1,0 +1,167 @@
+  frame 0/2202
+  frame 200/2202
+  frame 400/2202
+  frame 600/2202
+  frame 800/2202
+  frame 1000/2202
+  frame 1200/2202
+  frame 1400/2202
+  frame 1600/2202
+  frame 1800/2202
+  frame 2000/2202
+  frame 2200/2202
+
+Frozen B1 protocol: Top25 threshold=0.20000; no threshold search. GT is diagnostics-only.
+
+==============================================================================
+SEQUENCE 06: B1-MISSED OBJECT OBSERVABILITY
+==============================================================================
+instance-frames=459 moving_points=122069 (instances with >=5 points)
+
+---- detection groups ----
+     group     #obs     %obs       points   %points   med-size  med-range
+    missed       38      8.3          969       0.8       10.0      42.28
+   partial       97     21.1         5249       4.3       33.0      39.44
+      full      324     70.6       115851      94.9      158.5      23.09
+
+---- mutually exclusive causes of B1 misses ----
+                 cause     #obs     %miss       points   %misspts
+       semantic absent       28      73.7          513       52.9
+        cluster absent        3       7.9           87        9.0
+     cluster low-score        7      18.4          369       38.1
+
+---- signal summaries by detection group ----
+
+semantic coverage
+    missed: p10=0.0000 median=0.0000 p90=0.6682
+   partial: p10=0.4286 median=0.7895 p90=0.9072
+      full: p10=0.9367 median=0.9978 p90=1.0000
+
+cluster coverage
+    missed: p10=0.0000 median=0.0000 p90=0.4619
+   partial: p10=0.1632 median=0.6667 p90=0.8591
+      full: p10=0.7953 median=0.9681 p90=1.0000
+
+motion probability top25
+    missed: p10=0.0000 median=0.0001 p90=0.0491
+   partial: p10=0.7161 median=0.9998 p90=1.0000
+      full: p10=1.0000 median=1.0000 p90=1.0000
+
+motion probability max
+    missed: p10=0.0000 median=0.0003 p90=0.2001
+   partial: p10=0.9935 median=1.0000 p90=1.0000
+      full: p10=1.0000 median=1.0000 p90=1.0000
+
+absolute residual top25 (m)
+    missed: p10=1.1372 median=3.0000 p90=3.0000
+   partial: p10=1.4046 median=3.0000 p90=3.0000
+      full: p10=3.0000 median=3.0000 p90=3.0000
+
+absolute residual max (m)
+    missed: p10=1.2337 median=3.0000 p90=3.0000
+   partial: p10=3.0000 median=3.0000 p90=3.0000
+      full: p10=3.0000 median=3.0000 p90=3.0000
+
+---- fixed residual-evidence reference levels among misses ----
+These are descriptive metric levels in metres, not selected decision thresholds.
+     top25 residual >=     #obs     %miss   %misspts
+                  0.05       38     100.0      100.0
+                  0.10       38     100.0      100.0
+                  0.20       38     100.0      100.0
+                  0.50       37      97.4       99.4
+
+---- missed instance-frames by mover class ----
+          class     miss/total     miss%   miss points   %misspts
+            car    36/327           11.0           885       91.3
+      bicyclist     0/111            0.0             0        0.0
+         person     2/21             9.5            84        8.7
+
+---- missed instance-frames by median range ----
+    range(m)     miss/total     miss%   miss points   %misspts
+   0-10          0/30             0.0             0        0.0
+  10-20          1/100            1.0            18        1.9
+  20-30          8/124            6.5           359       37.0
+  30-40          4/86             4.7            35        3.6
+  40-52         25/119           21.0           557       57.5
+moving points excluded from instance-frame analysis because instance_id<=0: 77
+
+==============================================================================
+SEQUENCE 07: B1-MISSED OBJECT OBSERVABILITY
+==============================================================================
+instance-frames=1920 moving_points=1060749 (instances with >=5 points)
+
+---- detection groups ----
+     group     #obs     %obs       points   %points   med-size  med-range
+    missed      405     21.1       232180      21.9       62.0      16.73
+   partial      208     10.8       145335      13.7       64.5      30.75
+      full     1307     68.1       683234      64.4      146.0      19.73
+
+---- mutually exclusive causes of B1 misses ----
+                 cause     #obs     %miss       points   %misspts
+       semantic absent      140      34.6        10808        4.7
+        cluster absent       23       5.7         1132        0.5
+     cluster low-score      242      59.8       220240       94.9
+
+---- signal summaries by detection group ----
+
+semantic coverage
+    missed: p10=0.0000 median=0.6667 p90=1.0000
+   partial: p10=0.3360 median=0.8107 p90=0.9825
+      full: p10=0.9551 median=0.9921 p90=1.0000
+
+cluster coverage
+    missed: p10=0.0000 median=0.5429 p90=0.9999
+   partial: p10=0.2500 median=0.7196 p90=0.9073
+      full: p10=0.8693 median=0.9744 p90=1.0000
+
+motion probability top25
+    missed: p10=0.0000 median=0.0000 p90=0.0149
+   partial: p10=0.5566 median=0.9993 p90=1.0000
+      full: p10=1.0000 median=1.0000 p90=1.0000
+
+motion probability max
+    missed: p10=0.0000 median=0.0001 p90=0.0734
+   partial: p10=0.9834 median=1.0000 p90=1.0000
+      full: p10=1.0000 median=1.0000 p90=1.0000
+
+absolute residual top25 (m)
+    missed: p10=1.1674 median=2.9377 p90=3.0000
+   partial: p10=2.0249 median=3.0000 p90=3.0000
+      full: p10=2.4885 median=3.0000 p90=3.0000
+
+absolute residual max (m)
+    missed: p10=3.0000 median=3.0000 p90=3.0000
+   partial: p10=3.0000 median=3.0000 p90=3.0000
+      full: p10=3.0000 median=3.0000 p90=3.0000
+
+---- fixed residual-evidence reference levels among misses ----
+These are descriptive metric levels in metres, not selected decision thresholds.
+     top25 residual >=     #obs     %miss   %misspts
+                  0.05      402      99.3       99.9
+                  0.10      402      99.3       99.9
+                  0.20      402      99.3       99.9
+                  0.50      398      98.3       99.7
+
+---- missed instance-frames by mover class ----
+          class     miss/total     miss%   miss points   %misspts
+            car   192/1218          15.8        202788       87.3
+          truck    16/58            27.6         13600        5.9
+         person   196/575           34.1         15787        6.8
+      bicyclist     1/69             1.4             5        0.0
+
+---- missed instance-frames by median range ----
+    range(m)     miss/total     miss%   miss points   %misspts
+   0-10        121/372           32.5        174169       75.0
+  10-20        120/574           20.9         48957       21.1
+  20-30         48/450           10.7          4315        1.9
+  30-40         53/310           17.1          2524        1.1
+  40-52         63/214           29.4          2215        1.0
+moving points excluded from instance-frame analysis because instance_id<=0: 6905
+
+==============================================================================
+CROSS-SEQUENCE FAILURE-CAUSE SUMMARY
+==============================================================================
+  sequence    missed   semantic absent   cluster absent   cluster low
+         6        38                28                3             7
+         7       405               140               23           242
+Architecture decision: semantic-absent misses require a proposal source independent of semantic foreground; cluster-absent misses require connectivity/proposal repair; cluster-low-score misses require motion scoring or training changes.
