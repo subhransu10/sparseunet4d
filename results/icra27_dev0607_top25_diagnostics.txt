@@ -1,0 +1,182 @@
+  frame 0/2202
+  frame 200/2202
+  frame 400/2202
+  frame 600/2202
+  frame 800/2202
+  frame 1000/2202
+  frame 1200/2202
+  frame 1400/2202
+  frame 1600/2202
+  frame 1800/2202
+  frame 2000/2202
+  frame 2200/2202
+
+Frozen protocol: B0=0.09000, B1 Top25=0.20000; no threshold search.
+
+========================================================================
+SEQUENCE 06 (1101 frames)
+========================================================================
+           mode        th       IoU      Prec       Rec         TP         FP         FN
+       B0-point   0.09000    0.7040    0.7257    0.9594     117249      44319       4968
+  point-control   0.20000    0.7220    0.7470    0.9558     116816      39567       5401
+       B1-Top25   0.20000    0.7164    0.7344    0.9668     118164      42733       4053
+
+---- exact error transitions ----
+Each row: recovered TP, lost TP, added FP, removed FP; net evidence is netTP-netFP.
+   B0->point-control: recovered=       0 lost=     433 addedFP=       0 removedFP=    4752 netTP=    -433 netFP=   -4752 evidence=   +4319
+   point-control->B1: recovered=    1348 lost=       0 addedFP=    3166 removedFP=       0 netTP=   +1348 netFP=   +3166 evidence=   -1818
+              B0->B1: recovered=    1039 lost=     124 addedFP=    2172 removedFP=    3758 netTP=    +915 netFP=   -1586 evidence=   +2501
+
+---- by range ----
+
+B0-point
+    bin(m)   recall     prec      GTmov         FN         FP
+   0-10       0.999    0.548      33994         31      27970
+  10-20       0.963    0.902      60064       2231       6268
+  20-30       0.957    0.822      20061        867       4157
+  30-40       0.880    0.545       5284        634       3883
+  40-52       0.572    0.441       2814       1205       2041
+
+point-control
+    bin(m)   recall     prec      GTmov         FN         FP
+   0-10       0.999    0.579      33994         31      24660
+  10-20       0.957    0.910      60064       2596       5717
+  20-30       0.955    0.835      20061        903       3773
+  30-40       0.879    0.564       5284        638       3587
+  40-52       0.562    0.464       2814       1233       1830
+
+B1-Top25
+    bin(m)   recall     prec      GTmov         FN         FP
+   0-10       0.999    0.560      33994         31      26690
+  10-20       0.979    0.909      60064       1252       5895
+  20-30       0.955    0.808      20061        901       4543
+  30-40       0.879    0.552       5284        637       3768
+  40-52       0.562    0.463       2814       1232       1837
+
+---- by mover class (recall) ----
+         class      GTpts        B0-point   point-control        B1-Top25
+           car      84686           0.944           0.939           0.955
+     bicyclist      36406           0.998           0.997           0.997
+        person       1120           0.904           0.898           0.898
+         truck          5           0.000           0.000           0.000
+
+---- by instance-frame ----
+Each observation is one labelled instance in one frame, not a persistent GT track.
+moving points without positive instance id: 77
+
+B0-point
+            bucket    #obs    %obs   %mov pts
+   missed entirely      36     7.8        0.8
+     mostly missed      27     5.9        1.6
+   partially found      72    15.7        4.2
+       fully found     324    70.6       93.5
+
+point-control
+            bucket    #obs    %obs   %mov pts
+   missed entirely      38     8.3        0.8
+     mostly missed      26     5.7        2.3
+   partially found      73    15.9        3.5
+       fully found     322    70.2       93.4
+
+B1-Top25
+            bucket    #obs    %obs   %mov pts
+   missed entirely      38     8.3        0.8
+     mostly missed      24     5.2        0.8
+   partially found      73    15.9        3.5
+       fully found     324    70.6       94.9
+
+B0 missed instance-frames recovered by point-control (>=10% detected):
+  observations: 0 / 36
+  moving points: 0 / 946
+
+B0 missed instance-frames recovered by B1 (>=10% detected):
+  observations: 0 / 36
+  moving points: 0 / 946
+
+========================================================================
+SEQUENCE 07 (1101 frames)
+========================================================================
+           mode        th       IoU      Prec       Rec         TP         FP         FN
+       B0-point   0.09000    0.7019    0.9697    0.7176     766236      23921     301548
+  point-control   0.20000    0.7012    0.9720    0.7156     764133      22038     303651
+       B1-Top25   0.20000    0.7122    0.9681    0.7293     778706      25638     289078
+
+---- exact error transitions ----
+Each row: recovered TP, lost TP, added FP, removed FP; net evidence is netTP-netFP.
+   B0->point-control: recovered=       0 lost=    2103 addedFP=       0 removedFP=    1883 netTP=   -2103 netFP=   -1883 evidence=    -220
+   point-control->B1: recovered=   14573 lost=       0 addedFP=    3600 removedFP=       0 netTP=  +14573 netFP=   +3600 evidence=  +10973
+              B0->B1: recovered=   13947 lost=    1477 addedFP=    3253 removedFP=    1536 netTP=  +12470 netFP=   +1717 evidence=  +10753
+
+---- by range ----
+
+B0-point
+    bin(m)   recall     prec      GTmov         FN         FP
+   0-10       0.677    0.990     631942     204171       4290
+  10-20       0.772    0.961     349139      79727      11003
+  20-30       0.849    0.900      61300       9263       5772
+  30-40       0.738    0.857      18321       4796       2258
+  40-52       0.493    0.854       7082       3591        598
+
+point-control
+    bin(m)   recall     prec      GTmov         FN         FP
+   0-10       0.675    0.991     631942     205214       3715
+  10-20       0.769    0.964     349139      80528      10096
+  20-30       0.847    0.904      61300       9384       5518
+  30-40       0.734    0.863      18321       4872       2142
+  40-52       0.484    0.858       7082       3653        567
+
+B1-Top25
+    bin(m)   recall     prec      GTmov         FN         FP
+   0-10       0.694    0.988     631942     193345       5226
+  10-20       0.777    0.957     349139      77955      12086
+  20-30       0.848    0.903      61300       9324       5581
+  30-40       0.737    0.861      18321       4824       2174
+  40-52       0.487    0.858       7082       3630        571
+
+---- by mover class (recall) ----
+         class      GTpts        B0-point   point-control        B1-Top25
+           car     820241           0.733           0.732           0.737
+         truck     157344           0.601           0.595           0.661
+        person      61802           0.680           0.675           0.680
+     bicyclist      28397           0.993           0.991           0.991
+
+---- by instance-frame ----
+Each observation is one labelled instance in one frame, not a persistent GT track.
+moving points without positive instance id: 6905
+
+B0-point
+            bucket    #obs    %obs   %mov pts
+   missed entirely     288    16.6       22.2
+     mostly missed      42     2.4        2.6
+   partially found     187    10.8       13.5
+       fully found    1217    70.2       61.7
+
+point-control
+            bucket    #obs    %obs   %mov pts
+   missed entirely     292    16.8       22.8
+     mostly missed      42     2.4        2.0
+   partially found     188    10.8       13.5
+       fully found    1212    69.9       61.7
+
+B1-Top25
+            bucket    #obs    %obs   %mov pts
+   missed entirely     288    16.6       21.6
+     mostly missed      40     2.3        1.5
+   partially found     193    11.1       14.9
+       fully found    1213    70.0       62.1
+
+B0 missed instance-frames recovered by point-control (>=10% detected):
+  observations: 0 / 288
+  moving points: 0 / 235340
+
+B0 missed instance-frames recovered by B1 (>=10% detected):
+  observations: 1 / 288
+  moving points: 6647 / 235340
+
+========================================================================
+CROSS-SEQUENCE DECISION SUMMARY
+========================================================================
+  sequence     B0 IoU     B1 IoU      delta
+         6     0.7040     0.7164    +0.0123
+         7     0.7019     0.7122    +0.0103
+Interpretation must be based on consistent mechanisms across both development sequences; audited sequence 08 remains forbidden.
