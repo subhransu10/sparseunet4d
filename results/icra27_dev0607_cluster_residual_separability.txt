@@ -1,0 +1,118 @@
+  frame 0/2202
+  frame 200/2202
+  frame 400/2202
+  frame 600/2202
+  frame 800/2202
+  frame 1000/2202
+  frame 1200/2202
+  frame 1400/2202
+  frame 1600/2202
+  frame 1800/2202
+  frame 2000/2202
+  frame 2200/2202
+
+=== predicted-cluster residual separability audit ===
+sequences=[6, 7] hard_motion_top25<0.20 signal_floor=0.10m required_worst_hard_AUROC=0.70
+GT supplies diagnostic majority-motion labels only; no threshold or model parameter is selected.
+
+---- cluster populations ----
+  sequence     static     moving   hard mov   mixed-neg   ignored
+         6      42154       1049         58          34      1039
+         7      59548       4670        937         119      1473
+
+---- all-moving-cluster AUROC ----
+                             feature    worst seq06 seq07
+                        motion_top25   0.9506  0.9898  0.9506
+                  residual_abs_top25   0.7148  0.7333  0.7148
+       residual_abs_top25_normalized   0.6453  0.6476  0.6453
+                   residual_coherent   0.7508  0.7814  0.7508
+        residual_coherent_normalized   0.7269  0.7421  0.7269
+           residual_sign_consistency   0.5541  0.5541  0.5673
+             residual_offset_support   0.6277  0.6277  0.6357
+                residual_consistency   0.7568  0.7790  0.7568
+
+---- HARD-moving-cluster AUROC versus all static clusters ----
+Hard positives are moving clusters the frozen B1 network scores below 0.20.
+                             feature    worst seq06 seq07
+                  residual_abs_top25   0.5053  0.5053  0.5159
+       residual_abs_top25_normalized   0.4798  0.4798  0.5438
+                   residual_coherent   0.5347  0.5347  0.5372
+        residual_coherent_normalized   0.5078  0.5078  0.5600
+           residual_sign_consistency   0.5390  0.5715  0.5390
+             residual_offset_support   0.4075  0.4075  0.4675
+                residual_consistency   0.5069  0.5069  0.5254
+
+---- group distributions ----
+
+sequence 06
+  residual_abs_top25
+         static: p10=0.2242 median=2.0073 p90=3.0000
+    hard-moving: p10=0.1122 median=2.2213 p90=3.0000
+    easy-moving: p10=1.9377 median=3.0000 p90=3.0000
+  residual_abs_top25_normalized
+         static: p10=0.0069 median=0.0737 p90=0.1999
+    hard-moving: p10=0.0029 median=0.0628 p90=0.2068
+    easy-moving: p10=0.0577 median=0.1073 p90=0.1887
+  residual_coherent
+         static: p10=0.0667 median=0.4767 p90=2.1212
+    hard-moving: p10=0.0662 median=0.5347 p90=3.0000
+    easy-moving: p10=0.5000 median=1.9074 p90=3.0000
+  residual_coherent_normalized
+         static: p10=0.0023 median=0.0194 p90=0.0998
+    hard-moving: p10=0.0015 median=0.0149 p90=0.1521
+    easy-moving: p10=0.0162 median=0.0688 p90=0.1487
+  residual_sign_consistency
+         static: p10=0.4754 median=1.0000 p90=1.0000
+    hard-moving: p10=0.5200 median=1.0000 p90=1.0000
+    easy-moving: p10=0.7939 median=1.0000 p90=1.0000
+  residual_offset_support
+         static: p10=0.2500 median=0.7500 p90=1.0000
+    hard-moving: p10=0.0000 median=0.5000 p90=1.0000
+    easy-moving: p10=0.5000 median=1.0000 p90=1.0000
+  residual_consistency
+         static: p10=0.0030 median=0.2676 p90=1.7667
+    hard-moving: p10=0.0000 median=0.2311 p90=2.4179
+    easy-moving: p10=0.2231 median=1.5363 p90=3.0000
+  saturation fraction
+         static: p10=0.0000 median=0.0312 p90=0.3333
+    hard-moving: p10=0.0000 median=0.0573 p90=0.5094
+    easy-moving: p10=0.0000 median=0.2955 p90=0.7377
+
+sequence 07
+  residual_abs_top25
+         static: p10=0.3052 median=2.0177 p90=3.0000
+    hard-moving: p10=0.3093 median=2.2118 p90=3.0000
+    easy-moving: p10=2.1658 median=3.0000 p90=3.0000
+  residual_abs_top25_normalized
+         static: p10=0.0116 median=0.0860 p90=0.2796
+    hard-moving: p10=0.0126 median=0.0929 p90=0.4208
+    easy-moving: p10=0.0675 median=0.1290 p90=0.3110
+  residual_coherent
+         static: p10=0.0739 median=0.5137 p90=2.2401
+    hard-moving: p10=0.0813 median=0.5943 p90=2.6162
+    easy-moving: p10=0.5272 median=2.1429 p90=3.0000
+  residual_coherent_normalized
+         static: p10=0.0031 median=0.0249 p90=0.1255
+    hard-moving: p10=0.0041 median=0.0348 p90=0.2099
+    easy-moving: p10=0.0212 median=0.0887 p90=0.2220
+  residual_sign_consistency
+         static: p10=0.4286 median=1.0000 p90=1.0000
+    hard-moving: p10=0.3750 median=1.0000 p90=1.0000
+    easy-moving: p10=0.7867 median=1.0000 p90=1.0000
+  residual_offset_support
+         static: p10=0.2500 median=0.7500 p90=1.0000
+    hard-moving: p10=0.0000 median=0.7500 p90=1.0000
+    easy-moving: p10=0.5000 median=1.0000 p90=1.0000
+  residual_consistency
+         static: p10=0.0000 median=0.3060 p90=1.8772
+    hard-moving: p10=0.0000 median=0.3628 p90=2.2500
+    easy-moving: p10=0.3117 median=1.9534 p90=3.0000
+  saturation fraction
+         static: p10=0.0000 median=0.0312 p90=0.3469
+    hard-moving: p10=0.0000 median=0.0418 p90=0.5000
+    easy-moving: p10=0.0250 median=0.2873 p90=0.6227
+
+=== ARCHITECTURE DECISION ===
+REJECT residual-consistency head with the current input encoding
+best_feature=residual_sign_consistency worst_hard_AUROC=0.5390
+Redesign the residual representation before adding another head.
