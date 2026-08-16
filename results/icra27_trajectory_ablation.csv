@@ -1,0 +1,11 @@
+feature,seq06_auroc,seq07_auroc,worst_auroc,role,decision
+maximum_displacement,0.6144,0.5370,0.5370,diagnostic,reject
+furthest_displacement,0.6352,0.5337,0.5337,diagnostic,reject
+fitted_speed,0.6814,0.5335,0.5335,diagnostic,reject
+median_speed,0.6766,0.4990,0.4990,diagnostic,reject
+direction_consistency,0.5380,0.5029,0.5029,diagnostic,reject
+speed_consistency,0.5869,0.5230,0.5230,diagnostic,reject
+monotonicity,0.5181,0.5277,0.5181,diagnostic,reject
+track_support,0.3540,0.5072,0.3540,diagnostic,reject
+displacement_support,0.5739,0.5367,0.5367,diagnostic,reject
+trajectory_score,0.6818,0.5476,0.5476,predeclared,reject

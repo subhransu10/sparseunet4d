@@ -1,0 +1,106 @@
+% Paper-ready ICRA 2027 ablation tables. Requires booktabs.
+% Sequence 08 is a one-shot internal audit, not an untouched test set.
+
+\begin{table}[t]
+\centering
+\caption{Robust cluster-evidence ablation on development sequences 06/07.
+One threshold is shared across sequences and selected by worst-sequence IoU.}
+\label{tab:cluster_ablation}
+\small
+\begin{tabular}{lrrrrr}
+\toprule
+Method & Worst & Macro & Pooled & Seq.~06 & Seq.~07 \\
+\midrule
+Point (B0)       & .7019 & .7030 & .7022 & .7040 & .7019 \\
+Mean             & .7065 & .7089 & .7071 & .7113 & .7065 \\
+Top25 (B1)       & \textbf{.7122} & .7143 & .7127 & .7164 & \textbf{.7122} \\
+Top10            & .7117 & \textbf{.7237} & \textbf{.7148} & \textbf{.7357} & .7117 \\
+Maximum          & .7101 & .7160 & .7116 & .7218 & .7101 \\
+Learned score    & .7008 & .7038 & .7016 & .7069 & .7008 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{Mechanism controls. Top25 is accepted because it improves both
+development sequences; memory is rejected because it gives zero improvement
+on the worst sequence.}
+\label{tab:mechanism_controls}
+\small
+\begin{tabular}{lrrrrr}
+\toprule
+Method & Worst & Pooled & Prec. & Recall & Decision \\
+\midrule
+B0 point              & .7019 & .7022 & .9283 & .7424 & baseline \\
+Point-only control    & .7012 & .7038 & .9346 & .7403 & control \\
+B1 Top25              & \textbf{.7122} & .7127 & .9292 & \textbf{.7537} & accept \\
+Controlled memory     & .7122 & \textbf{.7144} & .9335 & .7527 & reject \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{Single-development-sequence generalization stress test. Sequence 08
+was evaluated once and is reported only as an internal audit.}
+\label{tab:generalization_stress}
+\small
+\begin{tabular}{lrrr}
+\toprule
+Method & Dev.~07 & Audit~08 & Change \\
+\midrule
+B0 point           & .7175 & .7262 & +.0087 \\
+B1 completion      & .7211 & .6718 & -.0493 \\
+B2 memory          & .7684 & .5819 & -.1865 \\
+B4 reliable memory & .7670 & .5983 & -.1687 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{Worst-sequence AUROC on hard moving versus static predicted clusters.
+Neither representation reaches the predefined .70 acceptance threshold.}
+\label{tab:residual_audit}
+\small
+\begin{tabular}{lrr}
+\toprule
+Statistic & Legacy & Neighborhood \\
+\midrule
+Absolute Top25       & .5053 & .5814 \\
+Normalized Top25     & .4798 & .5955 \\
+Signed coherence     & .5347 & .5921 \\
+Normalized coherence & .5078 & \textbf{.6076} \\
+Sign consistency     & \textbf{.5390} & .5280 \\
+Offset support       & .4075 & .5577 \\
+Combined consistency & .5069 & .5841 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{Frozen ego-compensated object-trajectory audit. AUROC separates hard
+moving from predicted static clusters. The architecture decision was
+predeclared on the composite trajectory score, and required a worst-sequence
+AUROC of at least .70.}
+\label{tab:trajectory_audit}
+\small
+\begin{tabular}{lrrr}
+\toprule
+Statistic & Seq.~06 & Seq.~07 & Worst \\
+\midrule
+Maximum displacement   & .6144 & .5370 & .5370 \\
+Furthest displacement  & .6352 & .5337 & .5337 \\
+Fitted speed            & .6814 & .5335 & .5335 \\
+Median speed            & .6766 & .4990 & .4990 \\
+Direction consistency   & .5380 & .5029 & .5029 \\
+Speed consistency       & .5869 & .5230 & .5230 \\
+Monotonicity            & .5181 & .5277 & .5181 \\
+Track support           & .3540 & .5072 & .3540 \\
+Displacement support    & .5739 & .5367 & .5367 \\
+Trajectory score        & \textbf{.6818} & \textbf{.5476} & \textbf{.5476} \\
+\bottomrule
+\end{tabular}
+\end{table}

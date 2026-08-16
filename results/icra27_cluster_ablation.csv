@@ -1,0 +1,7 @@
+method,threshold,worst_iou,macro_iou,pooled_iou,precision,recall,seq06_iou,seq07_iou,decision
+point_B0,0.09,0.7019,0.7030,0.7022,0.9283,0.7424,0.7040,0.7019,baseline
+cluster_mean,0.15,0.7065,0.7089,0.7071,0.9302,0.7467,0.7113,0.7065,reject
+cluster_top25_B1,0.20,0.7122,0.7143,0.7127,0.9292,0.7537,0.7164,0.7122,accept
+cluster_top10,0.50,0.7117,0.7237,0.7148,0.9352,0.7520,0.7357,0.7117,reject
+cluster_maximum,0.95,0.7101,0.7160,0.7116,0.9335,0.7496,0.7218,0.7101,reject
+cluster_learned,0.20,0.7008,0.7038,0.7016,0.9277,0.7422,0.7069,0.7008,reject

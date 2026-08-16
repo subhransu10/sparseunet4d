@@ -1,0 +1,64 @@
+experiment: ICRA27 robust multi-development ablation freeze
+status: engineering_frozen
+protocol:
+  train_sequences: [0, 1, 2, 3, 4, 5, 9, 10]
+  development_sequences: [6, 7]
+  audited_not_unseen_sequences: [8]
+  feature_representative: residual
+  checkpoint_selection: shared_threshold_worst_sequence_iou
+  metric: official_point_level_moving_iou
+backbone:
+  checkpoint: runs/icra27_backbone_dev0607_label_free_robust_seed2701/best.pt
+  checkpoint_sha256: 33616f32d6060b7dd5ed777670b36852e91ab72d7cd6e3577d46ec296e1c9bb7
+  iteration: 36000
+  training_commit: 9c633e85d574b2d37fa260367d5223c17822babe
+development_results:
+  B0_point:
+    threshold: 0.09
+    worst_iou: 0.7019
+    macro_iou: 0.7030
+    pooled_iou: 0.7022
+    precision: 0.9283
+    recall: 0.7424
+    sequence_06_iou: 0.7040
+    sequence_07_iou: 0.7019
+  B1_top25:
+    threshold: 0.20
+    worst_iou: 0.7122
+    macro_iou: 0.7143
+    pooled_iou: 0.7127
+    precision: 0.9292
+    recall: 0.7537
+    sequence_06_iou: 0.7164
+    sequence_07_iou: 0.7122
+    delta_worst_over_B0: 0.0103
+architecture_decisions:
+  selected: B1_top25
+  rejected:
+    precision_controlled_memory:
+      reason: zero_worst_sequence_gain
+      worst_iou: 0.7122
+    legacy_residual_statistics:
+      reason: below_predeclared_auroc_gate
+      best_worst_auroc: 0.5390
+    neighborhood_residual_statistics:
+      reason: below_predeclared_auroc_gate
+      best_worst_auroc: 0.6076
+    object_trajectory_statistics:
+      reason: below_predeclared_auroc_gate
+      predeclared_feature: trajectory_score
+      required_worst_auroc: 0.70
+      sequence_06_auroc: 0.6818
+      sequence_07_auroc: 0.5476
+      worst_auroc: 0.5476
+trajectory_audit:
+  populations:
+    sequence_06: {static: 42154, moving: 1049, hard: 58, unmatched: 2342}
+    sequence_07: {static: 59548, moving: 4670, hard: 937, unmatched: 1328}
+  evaluator_sha256: 5f3cf724eaff118c1d4d5f90fbb4efef114f3a91d2b4c61b1ffe72fb4d4057f5
+  regression_test_sha256: 91388639a3ce891d0ecd4e60d745ca243b1843845d49962f4128c66565e0da91
+paper_constraints:
+  - Sequence 08 is an internal one-shot audit and must not be called unseen.
+  - MapMOS fusion must be disclosed wherever reported and is not the proposed method.
+  - Final unbiased performance claims require an official hidden test or external dataset.
+  - No further development selection is permitted on sequence 08.
