@@ -65,6 +65,38 @@ def residual_priority_rep(inv, G, feats):
     return rep
 
 
+def aggregate_voxel_features(inv, G, feats):
+    """Aggregate every point in a voxel without using labels.
+
+    Remission is averaged to provide a stable appearance feature.  Each
+    residual channel independently keeps the signed value with the largest
+    absolute magnitude, preserving temporal evidence that may occur on
+    different points inside the same voxel.  The output width is unchanged,
+    so existing model checkpoints remain load-compatible.
+    """
+    inv = np.asarray(inv, dtype=np.int64).reshape(-1)
+    feats = np.asarray(feats)
+    if feats.ndim != 2 or len(feats) != len(inv):
+        raise ValueError("feats must be (N,C) and align with inv")
+    if G < 0 or (len(inv) and (inv.min() < 0 or inv.max() >= G)):
+        raise ValueError("inv contains an invalid voxel id")
+    if G == 0:
+        return np.zeros((0, feats.shape[1]), dtype=feats.dtype)
+
+    out = np.zeros((G, feats.shape[1]), dtype=feats.dtype)
+    count = np.bincount(inv, minlength=G).astype(np.float32)
+    np.add.at(out[:, 0], inv, feats[:, 0])
+    out[:, 0] /= count.clip(min=1.0).astype(out.dtype)
+
+    # Different points may carry the strongest evidence for each offset.
+    for channel in range(1, feats.shape[1]):
+        order = np.argsort(np.abs(feats[:, channel]), kind="stable")
+        rep = np.empty(G, dtype=np.int64)
+        rep[inv[order]] = order
+        out[:, channel] = feats[rep, channel]
+    return out
+
+
 def _gt_offsets_panoptic(xyz_m, sem_raw, inst_raw):
     """Per-point offset (meters) to its REAL instance center, for ALL thing
     points (parked + moving). Mask = thing points with a valid instance.
@@ -170,7 +202,7 @@ class SemanticKITTI4D(Dataset):
         # voxel FEATURE representative: 'label' = legacy (motion-priority point,
         # unreproducible at inference); 'residual' = argmax |residual| (label-
         # free -> train/inference identical). Labels ALWAYS use motion priority.
-        assert feat_rep in ("label", "residual")
+        assert feat_rep in ("label", "residual", "aggregate")
         self.feat_rep = feat_rep
 
         self.lut = None
@@ -454,11 +486,15 @@ class SemanticKITTI4D(Dataset):
         rep[inv[order]] = order                  # last write per voxel = max-priority point
         # feature representative: label-free residual priority reproduces
         # bit-identically on the robot/streaming path; labels stay motion-max.
-        rep_f = (residual_priority_rep(inv, G, feats)
-                 if self.feat_rep == "residual" else rep)
+        if self.feat_rep == "aggregate":
+            voxel_feats = aggregate_voxel_features(inv, G, feats)
+        else:
+            rep_f = (residual_priority_rep(inv, G, feats)
+                     if self.feat_rep == "residual" else rep)
+            voxel_feats = feats[rep_f]
         out = {
             "coords": uniq_coords,                    # (M, 4) int32  (x, y, z, t)
-            "feats": feats[rep_f],                    # (M, 1+K) float32
+            "feats": voxel_feats,                     # (M, 1+K) float32
             "motion": mot[rep],                       # (M,)  int64
             "semantic": sem[rep],                     # (M,)  int64
             "offset": off[rep].astype(np.float32),    # (M, 3) float32

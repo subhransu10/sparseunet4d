@@ -153,12 +153,19 @@ class MOSInference:
         q[:, :3] = np.floor(coords[:, :3] / self.voxel_size)
         q = q.astype(np.int32)
         vkey = self._voxel_key4(q)          # 1D hash: ~7x faster than unique(axis=0)
-        if self.feat_rep == "residual":
-            # bit-identical to training: shared label-free helper
-            from sparseunet4d.datasets.semantickitti import residual_priority_rep
+        if self.feat_rep in ("residual", "aggregate"):
+            # Bit-identical to training: shared label-free helpers.
+            from sparseunet4d.datasets.semantickitti import (
+                aggregate_voxel_features, residual_priority_rep,
+            )
             uk, idx, inv = np.unique(vkey, return_index=True, return_inverse=True)
-            rep = residual_priority_rep(inv.reshape(-1), len(uk), feats)
-            return q[idx], feats[rep], keep_ref, n_pts_ref, frame_xyz[0]
+            inv = inv.reshape(-1)
+            if self.feat_rep == "aggregate":
+                voxel_feats = aggregate_voxel_features(inv, len(uk), feats)
+            else:
+                rep = residual_priority_rep(inv, len(uk), feats)
+                voxel_feats = feats[rep]
+            return q[idx], voxel_feats, keep_ref, n_pts_ref, frame_xyz[0]
         # legacy ('label'-trained) checkpoints: first-occurrence fallback; the
         # training motion-priority pick needs labels and can't be reproduced.
         _, first_idx = np.unique(vkey, return_index=True)
@@ -262,7 +269,8 @@ def replay_test(args):
         residual_feats=d.get("residual_feats", True),
         res_clip=d.get("res_clip", 3.0), frame_offsets=d.get("frame_offsets"),
         residual_validity=d.get("residual_validity", False),
-        residual_all_frames=d.get("residual_all_frames", False))
+        residual_all_frames=d.get("residual_all_frames", False),
+        feat_rep=d.get("feat_rep", "label"))
     provider = ds.pose_providers[seq]
     mos = MOSInference(args.config, args.ckpt, device=args.device,
                        propagate=args.propagate)
