@@ -1,0 +1,49 @@
+experiment: ICRA27 risk-controlled frozen-expert recovery
+protocol:
+  frozen_mapmos_expert: true
+  frozen_sparseunet4d_expert: true
+  resolver_calibration_sequence: 7
+  resolver_evaluation_sequence: 8
+  sequence_08_status: standard validation sequence; not claimed as untouched
+  metric: official point-level moving IoU
+  ignored_raw_labels:
+  - 0
+  - 1
+  ground_truth_used_for_prediction: false
+regime_selector:
+  input: raw MapMOS moving-prediction prevalence
+  sequence_06_prevalence: 0.00099123
+  sequence_07_prevalence: 0.00749227
+  gate: 0.00272517
+  margin_factor: 1.1
+  sequence_08_prevalence: 0.0032262
+  sequence_08_regime: recovery-add
+resolver:
+  type: point-weighted logistic cluster reliability
+  features: 43
+  regularization_c: 0.1
+  precision_drop_limit: 0.005
+  frozen_add_threshold: 0.98415984
+  artifact: artifacts/icra27_recovery_resolver_seq07.npz
+sequence_08_results:
+  mapmos:
+    iou: 0.8521
+    precision: 0.9682
+    recall: 0.8766
+    tp: 1458773
+    fp: 47923
+    fn: 205348
+  frozen_hybrid:
+    iou: 0.8595
+    precision: 0.9643
+    recall: 0.8878
+    tp: 1477341
+    fp: 54645
+    fn: 186780
+  iou_delta: 0.0075
+  added_tp: 18568
+  added_fp: 6722
+comparison_ceiling:
+  oracle_add_iou: 0.8926
+  oracle_choice_iou: 0.9056
+source_commit_before_freeze: 47ce8887dae7c58bbec0f4ba0b0a6746d2fc8ca6
