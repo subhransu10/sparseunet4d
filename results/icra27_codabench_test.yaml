@@ -1,0 +1,21 @@
+﻿experiment: ICRA27 frozen risk-controlled hybrid
+benchmark: SemanticKITTI Moving Object Segmentation
+evaluation: official hidden test
+test_sequences: [11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
+codabench_score_percent: 65.9
+prediction_files: 20351
+submission:
+  filename: icra27_frozen_hybrid_semantickitti_mos.zip
+  sha256: 2922bf12bfdf116063c8d9351bd56b103c74fb9da4015405d18e483cf1ec85d9
+method:
+  sparseunet4d_expert: frozen
+  mapmos_expert: frozen
+  mapmos_disclosure_required: true
+  resolver_calibration_sequence: 7
+  ground_truth_used_for_test_prediction: false
+provenance:
+  export_worktree_base_commit: 73bbb92f4d6fb48e438ec7126f137b9dbca2f848
+  exporter_archived_commit: 9d7e81f4029374972c864f63a01180b77d62c82e
+notes:
+  - This is a hybrid result and must not be presented as standalone SparseUNet4D.
+  - The submission archive is stored externally and is not committed to GitHub.
