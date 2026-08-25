@@ -37,8 +37,8 @@ RUN ln -s /usr/local/cuda-11.3 /usr/local/cuda \
         build-essential \
         ca-certificates \
         curl \
-        g++-10 \
-        gcc-10 \
+        g++-9 \
+        gcc-9 \
         libopenblas-dev \
         python3-dev \
         python3-pip \
@@ -63,7 +63,7 @@ RUN curl --fail --location --retry 5 \
         | sha256sum --check --strict \
     && tar -xzf /tmp/minkowski-engine.tar.gz -C /tmp \
     && cd "/tmp/MinkowskiEngine-${MINKOWSKI_ENGINE_COMMIT}" \
-    && CC=gcc-10 CXX=g++-10 MAX_JOBS=1 \
+    && CC=gcc-9 CXX=g++-9 MAX_JOBS=1 \
        TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST}" \
        python3 setup.py install --blas=openblas --force_cuda \
     && cd / \
