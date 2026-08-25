@@ -26,16 +26,14 @@ CPU-heavy and runs in a worker thread; inference runs on GPU. With
 scans rather than falling behind (correct behaviour for a robot: fresh
 predictions beat complete ones).
 
-Run (current best model — strided 5-frame window [1,2,4,8]):
+Run (released model — strided 5-frame window [1,2,4,8]):
   SU4D_BACKEND=me PYTHONPATH=$HOME/MinkowskiEngine:$HOME/sparseunet4d \
   ros2 run <pkg> mos_node --ros-args \
-    -p config:=$HOME/sparseunet4d/configs/residual_inject.yaml \
-    -p ckpt:=$HOME/sparseunet4d/runs/residual_inject2/best.pt \
-    -p propagate:=true \
-    -r ~/points:=/velodyne_points -r ~/odom:=/odometry/lidar
-
-  For deployment under drifty online odometry, use the drift-robust checkpoint
-  instead:  -p ckpt:=$HOME/sparseunet4d/runs/consistency_ft/best.pt
+    -p config:=$HOME/sparseunet4d/configs/pretrained_semantickitti.yaml \
+    -p ckpt:=$HOME/sparseunet4d/checkpoints/sparseunet4d_semantickitti/best.pt \
+    -p propagate:=false \
+    -r /sparseunet4d_mos/points:=/velodyne_points \
+    -r /sparseunet4d_mos/odom:=/odometry/lidar
 
 WARM-UP: the widest offset is 8, so the first ~8 scans (~0.8 s) produce
 partial-window predictions (missing offsets contribute zero residual) before

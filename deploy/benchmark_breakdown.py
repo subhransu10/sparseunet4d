@@ -7,7 +7,8 @@ and where the time actually goes. Run with SU4D_BACKEND=me.
 
 Usage:
   SU4D_BACKEND=me python benchmark_breakdown.py \
-    --config configs/consistency_ft.yaml --ckpt runs/consistency_ft/best.pt \
+    --config configs/pretrained_semantickitti.yaml \
+    --ckpt checkpoints/sparseunet4d_semantickitti/best.pt \
     --seq-dir /path/to/sequences/08 --warmup 20 --n 200
 """
 from __future__ import annotations

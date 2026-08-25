@@ -89,10 +89,20 @@ def aggregate_voxel_features(inv, G, feats):
     out[:, 0] /= count.clip(min=1.0).astype(out.dtype)
 
     # Different points may carry the strongest evidence for each offset.
+    # Select the largest absolute value per voxel in linear time.  On ties,
+    # choosing the largest input index exactly matches the previous stable
+    # ascending sort followed by last-write-wins assignment.
+    point_index = np.arange(len(inv), dtype=np.int64)
     for channel in range(1, feats.shape[1]):
-        order = np.argsort(np.abs(feats[:, channel]), kind="stable")
-        rep = np.empty(G, dtype=np.int64)
-        rep[inv[order]] = order
+        score = np.abs(feats[:, channel])
+        max_score = np.full(G, -np.inf, dtype=score.dtype)
+        np.maximum.at(max_score, inv, score)
+        best = score == max_score[inv]
+        # Preserve NumPy's stable-sort behaviour for the unlikely case of a
+        # NaN feature: NaNs sort last, with the final occurrence winning.
+        best |= np.isnan(score) & np.isnan(max_score[inv])
+        rep = np.full(G, -1, dtype=np.int64)
+        np.maximum.at(rep, inv[best], point_index[best])
         out[:, channel] = feats[rep, channel]
     return out
 

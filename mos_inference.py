@@ -200,23 +200,30 @@ class MOSInference:
                 x = ST(feats.to(self.device), coords.to(self.device))
             out = self.model(x)
             prob_v = torch.softmax(out["motion_logits"], 1)[:, 1].cpu().numpy()
-            sem_v = out["semantic_logits"].argmax(1).cpu().numpy()
+            # Semantic labels are only needed by optional instance
+            # propagation. Avoid their argmax and GPU-to-CPU transfer on the
+            # default motion-only deployment path.
+            sem_v = (out["semantic_logits"].argmax(1).cpu().numpy()
+                     if self.propagate else None)
             oc = out["coords"]
             oc = oc.cpu().numpy() if hasattr(oc, "cpu") else np.asarray(oc)
 
         t0 = oc[:, 4] == 0
         vk = self._key(oc[t0][:, 1:4])
-        order = np.argsort(vk)                      # one sort serves prob + sem
-        vk_s, vp_s, vs_s = vk[order], prob_v[t0][order], sem_v[t0][order]
+        order = np.argsort(vk)
+        vk_s, vp_s = vk[order], prob_v[t0][order]
+        vs_s = sem_v[t0][order] if self.propagate else None
         pk = self._key(np.floor(xyz_ref / self.voxel_size))
         if len(vk_s) == 0:
             p_prob = np.zeros(len(pk), np.float32)
-            p_sem = np.zeros(len(pk), np.int64)
+            if self.propagate:
+                p_sem = np.zeros(len(pk), np.int64)
         else:
             pos = np.clip(np.searchsorted(vk_s, pk), 0, len(vk_s) - 1)
             hit = vk_s[pos] == pk
             p_prob = np.where(hit, vp_s[pos], 0.0).astype(np.float32)
-            p_sem = np.where(hit, vs_s[pos], 0).astype(np.int64)
+            if self.propagate:
+                p_sem = np.where(hit, vs_s[pos], 0).astype(np.int64)
         if self.propagate:
             p_prob = self._propagate_v2(np.floor(xyz_ref / self.voxel_size)
                                         .astype(np.int64), p_prob, p_sem)

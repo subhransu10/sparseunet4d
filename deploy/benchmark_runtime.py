@@ -8,8 +8,8 @@ not a synthetic forward pass. Run with SU4D_BACKEND=me.
 
 Usage:
   SU4D_BACKEND=me python benchmark_runtime.py \
-    --config configs/consistency_ft.yaml \
-    --ckpt runs/consistency_ft/best.pt \
+    --config configs/pretrained_semantickitti.yaml \
+    --ckpt checkpoints/sparseunet4d_semantickitti/best.pt \
     --seq-dir /path/to/sequences/08 --warmup 20 --n 300
 """
 from __future__ import annotations

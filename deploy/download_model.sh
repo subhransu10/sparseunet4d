@@ -1,23 +1,42 @@
 #!/usr/bin/env bash
-# Fetch the pretrained MOS checkpoint from the GitHub release into the path the
-# configs expect (runs/consistency_ft/best.pt). Verifies SHA-256; safe to re-run.
+# Download the published checkpoint and verify it before installation.
 set -euo pipefail
 
-URL="https://github.com/subhransu10/sparseunet4d/releases/tag/v2.0"
-SHA="sha256:1852e83806c30ce1eae392c3105e051e8fcefb16c739f60cb4d362b70685a214"
+ASSET="sparseunet4d_semantickitti_best.pt"
+URL="https://github.com/subhransu10/sparseunet4d/releases/latest/download/${ASSET}"
+SHA256="65f7525f00a4a490df30ec91b5db713d865f30dffd76b4c7f9dfcbc353e31f1c"
 
-REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # deploy/ -> repo root
-DEST_DIR="$REPO/runs/consistency_ft"
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DEST_DIR="$REPO/checkpoints/sparseunet4d_semantickitti"
 DEST="$DEST_DIR/best.pt"
+TMP="$DEST.part"
 mkdir -p "$DEST_DIR"
 
-if [ -f "$DEST" ] && echo "$SHA  $DEST" | sha256sum -c - >/dev/null 2>&1; then
-  echo "checkpoint already present & verified: $DEST"
+verify() {
+  echo "$SHA256  $1" | sha256sum -c - >/dev/null 2>&1
+}
+
+if [[ -f "$DEST" ]] && verify "$DEST"; then
+  echo "Checkpoint already present and verified: $DEST"
   exit 0
 fi
 
-echo "downloading MOS checkpoint (~29 MB) ..."
-if command -v wget >/dev/null; then wget -O "$DEST" "$URL"
-else curl -L -o "$DEST" "$URL"; fi
+rm -f "$TMP"
+echo "Downloading $ASSET ..."
+if command -v curl >/dev/null 2>&1; then
+  curl --fail --location --retry 3 --output "$TMP" "$URL"
+elif command -v wget >/dev/null 2>&1; then
+  wget --tries=3 --output-document="$TMP" "$URL"
+else
+  echo "ERROR: install curl or wget and rerun this script." >&2
+  exit 1
+fi
 
-echo "$SHA  $DEST" | sha256sum -c - && echo "OK -> $DEST"
+if ! verify "$TMP"; then
+  rm -f "$TMP"
+  echo "ERROR: checkpoint checksum mismatch; partial file removed." >&2
+  exit 1
+fi
+
+mv "$TMP" "$DEST"
+echo "Checkpoint installed and verified: $DEST"

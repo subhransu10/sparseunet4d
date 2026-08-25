@@ -209,25 +209,20 @@ isolate pure drift-augmentation vs pure invariance vs the full method.
 
 ## Runtime
 
-End-to-end per scan on val-08 (123k points/scan, ~320k voxels over the 5-frame
-window), `deploy/benchmark_breakdown.py`.
+Measured on SemanticKITTI sequence 08 with a five-frame window, about 123k input
+points and 302k voxels per scan. The full benchmark used 20 warm-up scans and
+300 timed scans on an RTX 3090:
 
-| stage | RTX 5090 | RTX 3050 Ti Laptop (4 GB) |
-|---|:---:|:---:|
-| preprocess (CPU: residual images + voxelization) | 119 ms | 458 ms |
-| **network (GPU)** | **78 ms (12.8 Hz)** | 522 ms (1.9 Hz) |
-| postprocess (voxel→point) | 12 ms | 65 ms |
-| **end-to-end** | **208 ms (4.8 Hz)** | 1043 ms (1.0 Hz) |
+| measurement | mean | median | throughput |
+|---|---:|---:|---:|
+| network only (100-scan breakdown) | 186.7 ms | 188.7 ms | 5.3 Hz |
+| end to end (300-scan benchmark) | 494.1 ms | 491.4 ms | 2.0 Hz |
 
-Vectorizing voxelization and the voxel→point lookup (bit-identical output) halved
-end-to-end latency, 422 → 208 ms. Peak VRAM 777 MB.
-
-**We do not claim a runtime advantage.** Published MOS runtimes are measured on an
-RTX 3090 (SegNet4D 67 ms, Cylinder3D 125 ms, TemporalLatticeNet 154 ms, MarS3D
-180 ms, KPConv 225 ms, SpSequenceNet 497 ms); normalising our 5090 figures to
-3090-class hardware puts us mid-pack, and slower than the efficiency-focused
-methods. The claim we make is **deployability**: real-time operation as a live
-ROS 2 node on a 4 GB laptop GPU.
+The end-to-end path includes CPU preprocessing, sparse-tensor construction, GPU
+inference, and voxel-to-point postprocessing. Peak allocated VRAM was 1,027 MB.
+Because published methods do not always time the same stages, comparisons must
+label network-only and end-to-end measurements explicitly. We do not claim a
+runtime advantage.
 
 ## Robot deployment
 
