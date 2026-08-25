@@ -2,7 +2,7 @@
 # Download the published checkpoint and verify it before installation.
 set -euo pipefail
 
-ASSET="sparseunet4d_semantickitti_best.pt"
+ASSET="best.pt"
 URL="https://github.com/subhransu10/sparseunet4d/releases/latest/download/${ASSET}"
 SHA256="65f7525f00a4a490df30ec91b5db713d865f30dffd76b4c7f9dfcbc353e31f1c"
 

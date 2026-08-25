@@ -68,7 +68,7 @@ place the file at that exact path:
 
 ```bash
 mkdir -p checkpoints/sparseunet4d_semantickitti
-mv ~/Downloads/sparseunet4d_semantickitti_best.pt \
+mv ~/Downloads/best.pt \
   checkpoints/sparseunet4d_semantickitti/best.pt
 sha256sum checkpoints/sparseunet4d_semantickitti/best.pt
 ```
