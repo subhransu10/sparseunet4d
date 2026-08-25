@@ -260,6 +260,10 @@ PY'
 ```
 
 The tested checkpoint prints threshold `0.9`. Do not override it with `0.92`.
+On SemanticKITTI validation sequence 08, this released checkpoint records
+**83.66% point-level moving IoU** at that threshold. This dataset result is a
+reference for checkpoint verification; it is not an expected Gazebo or
+real-Husky accuracy because those domains and LiDAR characteristics differ.
 
 ## 6. Start Gazebo and identify topics
 

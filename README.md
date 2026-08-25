@@ -43,7 +43,7 @@ object level.
 ## Results
 
 On SemanticKITTI validation sequence 08, the released checkpoint records
-**76.89% point-level moving IoU** at its selected threshold of **0.9**. This is a
+**83.66% point-level moving IoU** at its selected threshold of **0.9**. This is a
 validation result, not a SemanticKITTI test-server result.
 
 Runtime was measured on 320 consecutive sequence-08 scans (about 123k input

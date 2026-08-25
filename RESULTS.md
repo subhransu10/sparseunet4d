@@ -10,21 +10,25 @@ checkpoint selection.
 
 ## Headline
 
-| model | point-level IoU | precision | recall |
-|-------|:---------------:|:---------:|:------:|
-| starting point | ~0.62 | — | 0.666 |
-| trajectory-consistent injection (`residual_inject2`) | 0.7129 | 0.885 | 0.786 |
-| **full model (`dual_v4`)** | **0.7680** | 0.874 | **0.864** |
-| full model, tuned operating point (th 0.93) | 0.7711 | 0.891 | 0.852 |
+| model | point-level IoU | operating point | status |
+|-------|:---------------:|:---------------:|--------|
+| starting point | ~0.62 | — | historical baseline |
+| trajectory-consistent injection (`residual_inject2`) | 0.7129 | evaluated operating point | ablation stage |
+| `dual_v4` | 0.7680 | th 0.5 | ablation-stage checkpoint |
+| `dual_v4`, tuned on val-08 | 0.7711 | th 0.93 | ablation-stage operating-point study |
+| **released checkpoint** | **0.8366 (83.66%)** | **th 0.9** | **final reported validation result** |
 
-**0.62 → 0.768 point-level.** Missed movers fall from 356,990 to 226,417 — a
-**37% reduction in false negatives** — at essentially unchanged precision.
+The headline result is therefore **83.66% point-level moving IoU** on
+SemanticKITTI validation sequence 08 at threshold **0.9**. This is a validation
+result, not a SemanticKITTI test-server result. It is **6.86 percentage points**
+above the earlier `dual_v4` result at threshold 0.5. Precision, recall, FP and FN
+for the released checkpoint are not reported here because they cannot be
+reconstructed from IoU alone.
 
-We report **0.768 at argmax (th = 0.5)** as the headline. The tuned-threshold
-number is listed for completeness only: it is selected on the same validation
-sequence it is reported on, and worth +0.3 IoU. The IoU curve is nearly flat from
-th 0.05 to 0.95 (0.749 → 0.771), i.e. the model is **not threshold-fragile** —
-which matters more for deployment than the extra 0.3.
+The older `dual_v4` operating-point sweep is retained as ablation history. For
+that checkpoint, the IoU curve was nearly flat from th 0.05 to 0.95
+(0.749 → 0.771). Those values should not be presented as the final checkpoint's
+threshold curve without rerunning the sweep on the released checkpoint.
 
 ### Position against published val-08 numbers
 
@@ -33,14 +37,21 @@ which matters more for deployment than the extra 0.3.
 | InsMOS | 73.2 |
 | MF-MOS | 76.1 |
 | MotionBEV | 76.5 |
-| **ours (`dual_v4`)** | **76.8** |
+| 4DMOS | 77.2 |
 | CV-MOS | 77.5 |
+| Two-streamMOS | 77.9 |
+| LiDAR-IMU-GNSS | 79.0 |
 | 4D-CS | 80.9 |
 | MambaMOS | 82.3 |
+| **ours (released checkpoint)** | **83.66** |
+| MapMOS | 86.1 |
 
-Above MF-MOS and MotionBEV, ~0.7 below CV-MOS, clearly below 4D-CS / MambaMOS.
-We do **not** claim accuracy SOTA. The claimed contributions are the
-ego-motion-robustness analysis, trajectory-consistent injection, the
+The released checkpoint is 1.36 percentage points above MambaMOS and 2.44
+points below MapMOS. We therefore do **not** claim accuracy SOTA. The comparison
+values are taken from the published [MambaMOS](https://arxiv.org/abs/2404.12794),
+[CV-MOS](https://arxiv.org/abs/2408.13790), and
+[4D-CS](https://arxiv.org/abs/2501.02937) papers. The claimed contributions are
+the ego-motion-robustness analysis, trajectory-consistent injection, the
 object-consistency + decoupled-branch design, and a validated real-robot
 deployment.
 
@@ -253,14 +264,16 @@ labelled robot data.
 python3 build_instance_bank.py --root <sequences> --seqs 0 1 2 3 4 5 6 7 9 10 \
     --offsets 1 2 4 8 --out mover_bank.npy
 
-# 2. train the full model (cluster head + dual branch + all-frame supervision)
+# 2. reproduce the dual_v4 ablation-stage model
 SU4D_BACKEND=me python scripts/train.py --config configs/dual_v4.yaml \
     --save-dir runs/dual_v4
 
-# 3. official point-level eval (headline number, argmax)
-SU4D_BACKEND=me python eval_mos_official.py --config configs/dual_v4.yaml \
-    --ckpt runs/dual_v4/best.pt --mos-yaml <semantic-kitti-mos.yaml> \
-    --point-level --threshold 0.5
+# 3. official point-level eval (83.66% released-checkpoint result)
+SU4D_BACKEND=me python eval_mos_official.py \
+    --config configs/pretrained_semantickitti.yaml \
+    --ckpt checkpoints/sparseunet4d_semantickitti/best.pt \
+    --mos-yaml <semantic-kitti-mos.yaml> \
+    --point-level --threshold 0.9
 
 # 4. operating-point curve (one pass, full threshold grid)
 SU4D_BACKEND=me python sweep_threshold_pointlevel.py \
@@ -285,5 +298,6 @@ All ablation runs use identical data, schedule and seed unless the table says
 otherwise; only the named variable changes.
 
 **Outstanding before publication.** The robustness table (Contribution 2) was
-measured on the `inject2` generation of the model. Re-run the drift sweep on
-`dual_v4` (step 6) so every table refers to the same final model.
+measured on the `inject2` generation of the model. Re-run the drift sweep on the
+released checkpoint, using its matching configuration, so the headline and
+robustness results refer to the same final model.
