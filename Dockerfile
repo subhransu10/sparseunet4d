@@ -8,7 +8,10 @@ FROM nvidia/cuda:11.3.1-devel-ubuntu20.04 AS cuda
 FROM ros:humble-ros-base-jammy
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG MINKOWSKI_ENGINE_VERSION=0.5.4
+# This post-v0.5.4 commit still reports 0.5.4 and adds Python 3.10/PyTorch 1.11+
+# compatibility. Keep it aligned with deploy/setup_venv.sh.
+ARG MINKOWSKI_ENGINE_COMMIT=02fc608bea4c0549b0a7b00ca1bf15dee4a0b228
+ARG MINKOWSKI_ENGINE_SHA256=9ac2730bff659202400a76abf370e9690caa1b68edd430629422192fccd7af02
 ARG TORCH_CUDA_ARCH_LIST="8.6+PTX"
 ARG CHECKPOINT_URL="https://github.com/subhransu10/sparseunet4d/releases/latest/download/best.pt"
 ARG CHECKPOINT_SHA256="65f7525f00a4a490df30ec91b5db713d865f30dffd76b4c7f9dfcbc353e31f1c"
@@ -54,16 +57,18 @@ RUN python3 -m pip install --upgrade "pip<25" setuptools==59.6.0 wheel \
         scipy==1.15.3
 
 RUN curl --fail --location --retry 5 \
-        "https://github.com/NVIDIA/MinkowskiEngine/archive/refs/tags/v${MINKOWSKI_ENGINE_VERSION}.tar.gz" \
+        "https://github.com/NVIDIA/MinkowskiEngine/archive/${MINKOWSKI_ENGINE_COMMIT}.tar.gz" \
         --output /tmp/minkowski-engine.tar.gz \
+    && echo "${MINKOWSKI_ENGINE_SHA256}  /tmp/minkowski-engine.tar.gz" \
+        | sha256sum --check --strict \
     && tar -xzf /tmp/minkowski-engine.tar.gz -C /tmp \
-    && cd "/tmp/MinkowskiEngine-${MINKOWSKI_ENGINE_VERSION}" \
+    && cd "/tmp/MinkowskiEngine-${MINKOWSKI_ENGINE_COMMIT}" \
     && CC=gcc-10 CXX=g++-10 MAX_JOBS=1 \
        TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST}" \
        python3 setup.py install --blas=openblas --force_cuda \
     && cd / \
     && rm -rf /tmp/minkowski-engine.tar.gz \
-              "/tmp/MinkowskiEngine-${MINKOWSKI_ENGINE_VERSION}"
+              "/tmp/MinkowskiEngine-${MINKOWSKI_ENGINE_COMMIT}"
 
 WORKDIR /opt/sparseunet4d
 
