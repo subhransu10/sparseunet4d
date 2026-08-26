@@ -41,7 +41,7 @@ Set those two topic names and run:
 
 ```bash
 export CLOUD_TOPIC=/velodyne_points
-export ODOM_TOPIC=/odom
+export ODOM_TOPIC=/platform/odom
 export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
 
 docker run --rm --name sparseunet4d-mos \

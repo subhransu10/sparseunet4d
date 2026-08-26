@@ -98,6 +98,7 @@ RUN mkdir -p checkpoints/sparseunet4d_semantickitti \
         | sha256sum --check --strict
 
 COPY . /opt/sparseunet4d
+COPY --chmod=755 deploy/jetson_ros_entrypoint.sh /ros_entrypoint.sh
 
 # A Docker build does not have a GPU, so runtime CUDA is tested after the image
 # is built. Imports, architecture, versions and ROS Python bindings are checked.
@@ -118,6 +119,8 @@ assert backend() == "me", backend()
 print("PyTorch", torch.__version__, "CUDA", torch.version.cuda)
 print("MinkowskiEngine", ME.__version__)
 PY
+
+ENTRYPOINT ["/ros_entrypoint.sh"]
 
 CMD ["python3", "/opt/sparseunet4d/mos_node.py", "--ros-args", \
      "-p", "config:=/opt/sparseunet4d/configs/pretrained_semantickitti.yaml", \
