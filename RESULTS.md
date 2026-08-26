@@ -47,13 +47,7 @@ threshold curve without rerunning the sweep on the released checkpoint.
 | MapMOS | 86.1 |
 
 The released checkpoint is 1.36 percentage points above MambaMOS and 2.44
-points below MapMOS. We therefore do **not** claim accuracy SOTA. The comparison
-values are taken from the published [MambaMOS](https://arxiv.org/abs/2404.12794),
-[CV-MOS](https://arxiv.org/abs/2408.13790), and
-[4D-CS](https://arxiv.org/abs/2501.02937) papers. The claimed contributions are
-the ego-motion-robustness analysis, trajectory-consistent injection, the
-object-consistency + decoupled-branch design, and a validated real-robot
-deployment.
+points below MapMOS. We therefore do **not** claim accuracy SOTA. The comparison values are taken from the published [MambaMOS](https://arxiv.org/abs/2404.12794),[CV-MOS](https://arxiv.org/abs/2408.13790), and [4D-CS](https://arxiv.org/abs/2501.02937) papers. The claimed contributions are the ego-motion-robustness analysis, trajectory-consistent injection, the object-consistency + decoupled-branch design, and a validated real-robot deployment.
 
 ## Method: four accepted changes
 

@@ -57,8 +57,8 @@ RUN python3 -m pip install --upgrade "pip<25" setuptools==68.2.2 wheel \
         pyyaml==6.0.3 \
         scipy==1.15.3
 
-# MinkowskiEngine 0.5.4 predates CUDA 12.  Add the explicit Thrust headers
-# required by CUDA 12 and disable the incompatible legacy NVTX instrumentation.
+# MinkowskiEngine 0.5.4 predates CUDA 12. Add the required Thrust headers,
+# disable legacy NVTX, and avoid CUDA/GCC's ambiguous __to_address overload.
 RUN curl --fail --location --retry 5 \
         "https://github.com/NVIDIA/MinkowskiEngine/archive/${MINKOWSKI_ENGINE_COMMIT}.tar.gz" \
         --output /tmp/minkowski-engine.tar.gz \
@@ -75,6 +75,12 @@ RUN curl --fail --location --retry 5 \
        done \
     && sed -i 's/CC_FLAGS += \["-fopenmp"\]/CC_FLAGS += ["-fopenmp", "-std=c++17", "-DNVTX_DISABLE"]/' setup.py \
     && sed -i 's/NVCC_FLAGS += \["--expt-relaxed-constexpr", "--expt-extended-lambda"\]/NVCC_FLAGS += ["--expt-relaxed-constexpr", "--expt-extended-lambda", "-std=c++17", "-DNVTX_DISABLE"]/' setup.py \
+    && sed -i 's/m_map = map_type::create(/auto map_unique = map_type::create(/' \
+         src/coordinate_map_gpu.cuh \
+    && sed -i '/m_unused_element, m_unused_key, m_hasher, m_equal, m_map_allocator);/a\      auto map_deleter = map_unique.get_deleter();\n      m_map = std::shared_ptr<map_type>(map_unique.release(), map_deleter);' \
+         src/coordinate_map_gpu.cuh \
+    && test "$(grep -c 'auto map_unique = map_type::create' src/coordinate_map_gpu.cuh)" -eq 1 \
+    && test "$(grep -c 'map_unique.release()' src/coordinate_map_gpu.cuh)" -eq 1 \
     && MAX_JOBS=2 python3 setup.py install \
          --blas=openblas --force_cuda --cuda_home=/usr/local/cuda \
     && cd / \

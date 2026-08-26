@@ -57,6 +57,3 @@ docker run --rm --name sparseunet4d-mos \
     -r /sparseunet4d_mos/odom:="$ODOM_TOPIC"
 ```
 
-Start stationary and test at low speed in a controlled area. This is
-experimental perception output; do not connect it directly to steering,
-braking, or emergency-stop control.
