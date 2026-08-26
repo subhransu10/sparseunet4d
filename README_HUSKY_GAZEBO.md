@@ -2,12 +2,24 @@
 
 The published image is self-contained: it includes ROS 2 Humble, PyTorch
 `1.12.1+cu113`, MinkowskiEngine `0.5.4`, the SparseUNet4D source and configs,
-and the released `best.pt`. No Python environment or model mount is required.
+and the released `best.pt`. You do not need to copy the repository, model, or
+Python environment separately.
 
-The x86-64 host needs Docker, an NVIDIA driver, and NVIDIA Container Toolkit.
-Confirm that `nvidia-smi` works before continuing. MinkowskiEngine is compiled
-for CUDA compute capability 8.6 (including RTX 3050 Ti and RTX 3090), with PTX
-included for compatible newer GPUs.
+## Check the PC
+
+```bash
+uname -m
+nvidia-smi
+docker --version
+```
+
+Continue if `uname -m` prints `x86_64`, `nvidia-smi` sees the GPU, and Docker
+is installed. The PC also needs NVIDIA Container Toolkit and about 15 GB of
+free Docker storage. The image is tested with compute-capability 8.6 GPUs such
+as the RTX 3050 Ti and RTX 3090.
+
+> Jetson Orin is `arm64`, so it cannot run this `amd64` image. Follow the
+> separate [Jetson AGX Orin instructions](README_JETSON_ORIN.md).
 
 ## Pull
 
@@ -15,7 +27,7 @@ included for compatible newer GPUs.
 docker pull ghcr.io/subhransu10/sparseunet4d:latest
 ```
 
-Optional version check:
+Verify that Docker can use the GPU:
 
 ```bash
 docker run --rm --gpus all \
