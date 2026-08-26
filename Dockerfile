@@ -81,7 +81,7 @@ RUN mkdir -p checkpoints/sparseunet4d_semantickitti \
 
 COPY . /opt/sparseunet4d
 
-RUN python3 - <<'PY'
+RUN . /opt/ros/humble/setup.sh && python3 - <<'PY'
 import MinkowskiEngine as ME
 import rclpy
 import sensor_msgs_py

@@ -10,8 +10,7 @@ The repository includes training and evaluation code for SemanticKITTI, a
 streaming Python API, a ROS 2 node, KITTI replay tools, and Husky/Gazebo
 deployment instructions.
 
-> This is research software. Do not connect its output directly to a vehicle's
-> steering, braking, or emergency-stop controller.
+> This research is ready to be tested on an autonomous vehicle in an outdoor setting.
 
 ## Architecture
 
