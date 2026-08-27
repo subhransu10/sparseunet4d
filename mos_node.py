@@ -22,9 +22,9 @@ Pose source:
 
 Latency: preprocessing (voxelize + spherical projections + residuals) is
 CPU-heavy and runs in a worker thread; inference runs on GPU. With
-`~pipeline:=true` the node processes the newest scan and DROPS older queued
-scans rather than falling behind (correct behaviour for a robot: fresh
-predictions beat complete ones).
+`~pipeline:=true` the node publishes the newest scan and drops older queued
+output jobs rather than falling behind. Every input scan is still retained in
+the temporal history, so offsets [1,2,4,8] stay tied to the LiDAR rate.
 
 Run (released model — strided 5-frame window [1,2,4,8]):
   SU4D_BACKEND=me PYTHONPATH=$HOME/MinkowskiEngine:$HOME/sparseunet4d \
@@ -82,15 +82,36 @@ class MOSNode(Node):
         self.declare_parameter("propagate", True)
         self.declare_parameter("use_kiss_icp", False)
         self.declare_parameter("pipeline", True)
+        self.declare_parameter("intensity_scale", 1.0)
+        self.declare_parameter("projection_height", 64)
+        self.declare_parameter("projection_width", 2048)
+        self.declare_parameter("fov_up_deg", 3.0)
+        self.declare_parameter("fov_down_deg", -25.0)
         cfg = self.get_parameter("config").value
         ckpt = self.get_parameter("ckpt").value
         assert cfg and ckpt, "config and ckpt parameters are required"
         self.pipeline = self.get_parameter("pipeline").value
+        self.intensity_scale = float(
+            self.get_parameter("intensity_scale").value)
+        if not np.isfinite(self.intensity_scale) or self.intensity_scale <= 0:
+            raise ValueError("intensity_scale must be finite and greater than zero")
 
         self.get_logger().info("loading SparseUNet4D...")
         self.mos = MOSInference(cfg, ckpt,
                                 device=self.get_parameter("device").value,
-                                propagate=self.get_parameter("propagate").value)
+                                propagate=self.get_parameter("propagate").value,
+                                projection_height=self.get_parameter(
+                                    "projection_height").value,
+                                projection_width=self.get_parameter(
+                                    "projection_width").value,
+                                fov_up_deg=self.get_parameter("fov_up_deg").value,
+                                fov_down_deg=self.get_parameter(
+                                    "fov_down_deg").value)
+        self.get_logger().info(
+            f"sensor adaptation: intensity / {self.intensity_scale:g}, "
+            f"projection {self.mos.projection_height}x"
+            f"{self.mos.projection_width}, vertical FOV "
+            f"[{self.mos.fov_down_deg:g}, {self.mos.fov_up_deg:g}] deg")
 
         self.icp = None
         if self.get_parameter("use_kiss_icp").value:
@@ -111,12 +132,16 @@ class MOSNode(Node):
 
         self._odom = None                 # latest (stamp_ns, T 4x4)
         self._odom_buf = []               # [(stamp_ns, pos3, quat4)] time-sync
-        self._pending = None              # newest unprocessed (msg, T)
+        self._scan_buf = []               # every input scan, newest first
+        self._pending = None              # newest output job; stale jobs dropped
         self._lock = threading.Lock()
         self._prev_T = None
         self._busy = False
         self._t_last_log = time.time()
         self._lat = []
+        self._prob_max = []
+        self._moving_count = []
+        self._logged_input = False
         if self.pipeline:
             threading.Thread(target=self._worker, daemon=True).start()
         self.get_logger().info("ready.")
@@ -136,16 +161,37 @@ class MOSNode(Node):
         self._odom = (stamp, T)
 
     def on_cloud(self, msg: PointCloud2):
-        T = self._pose_for(msg)
+        scan = self._read_xyzi(msg)
+        if not len(scan):
+            self.get_logger().warn("empty finite point cloud; dropping scan",
+                                   throttle_duration_sec=2.0)
+            return
+        T = self._pose_for(msg, scan)
         if T is None:
             self.get_logger().warn("no pose available yet; dropping scan",
                                    throttle_duration_sec=2.0)
             return
+        model_scan = scan.copy()
+        model_scan[:, 3] /= self.intensity_scale
+        if not self._logged_input:
+            raw = scan[:, 3]
+            pct = np.percentile(raw, [0, 50, 95, 100])
+            self.get_logger().info(
+                "input points=%d raw intensity min/median/p95/max="
+                "%.3g/%.3g/%.3g/%.3g; normalized max=%.3g" %
+                (len(scan), *pct, model_scan[:, 3].max()))
+            self._logged_input = True
+
+        frame = (model_scan[:, :3], model_scan[:, 3:4],
+                 np.asarray(T, np.float64).copy())
+        self._scan_buf.insert(0, frame)
+        del self._scan_buf[self.mos.max_offset + 1:]
+        history = tuple(self._scan_buf)
         if self.pipeline:
             with self._lock:
-                self._pending = (msg, T)   # newest wins; stale scans dropped
+                self._pending = (msg, scan, history)  # newest output wins
         else:
-            self._process(msg, T)
+            self._process(msg, scan, history)
 
     # ---------------- pose ------------------------------------------------
     @staticmethod
@@ -182,9 +228,11 @@ class MOSNode(Node):
         T[:3, 3] = p
         return T
 
-    def _pose_for(self, msg):
+    def _pose_for(self, msg, scan=None):
         if self.icp is not None:
-            xyz = self._read_xyzi(msg)[:, :3].astype(np.float64)
+            if scan is None:
+                scan = self._read_xyzi(msg)
+            xyz = scan[:, :3].astype(np.float64)
             self.icp.register_frame(xyz, np.zeros(len(xyz)))
             T = np.asarray(self.icp.last_pose)
         elif self._odom_buf:
@@ -212,18 +260,24 @@ class MOSNode(Node):
                 continue
             self._process(*job)
 
-    def _process(self, msg, T):
+    def _process(self, msg, scan, history):
         t0 = time.time()
-        scan = self._read_xyzi(msg)
-        labels, probs = self.mos.push(scan, T)
+        labels, probs = self.mos.infer_history(history)
         self._publish(msg, scan, labels, probs)
         self._lat.append(time.time() - t0)
+        self._prob_max.append(float(probs.max()) if len(probs) else 0.0)
+        self._moving_count.append(int(np.count_nonzero(labels == 1)))
         if time.time() - self._t_last_log > 5.0:
             l = np.array(self._lat) * 1e3
             self.get_logger().info(
                 f"latency mean {l.mean():.1f} ms (p95 {np.percentile(l,95):.1f}) "
-                f"-> {1000/max(l.mean(),1e-6):.1f} Hz")
-            self._lat.clear(); self._t_last_log = time.time()
+                f"-> {1000/max(l.mean(),1e-6):.1f} Hz; "
+                f"prob max {max(self._prob_max):.3g}; "
+                f"moving points max {max(self._moving_count)}")
+            self._lat.clear()
+            self._prob_max.clear()
+            self._moving_count.clear()
+            self._t_last_log = time.time()
 
     # ---------------- IO ---------------------------------------------------
     @staticmethod

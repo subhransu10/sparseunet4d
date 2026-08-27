@@ -100,7 +100,9 @@ def residual_channels(points_now, past_scans_in_now,
 
 
 def temporal_residual_blocks(frame_xyz, stack_offsets, offsets, *, clip=3.0,
-                             return_validity=False, all_frames=False):
+                             return_validity=False, all_frames=False,
+                             projection_height=64, projection_width=2048,
+                             fov_up_deg=3.0, fov_down_deg=-25.0):
     """Build residual features for every loaded temporal slice.
 
     Channel count is always ``len(offsets)`` (or twice that with validity).
@@ -119,8 +121,10 @@ def temporal_residual_blocks(frame_xyz, stack_offsets, offsets, *, clip=3.0,
                    for t in range(1, len(frame_xyz))}
     empty = np.zeros((0, 3), np.float32)
     past_list = [past_by_off.get(o, empty) for o in offsets]
+    projection = dict(H=projection_height, W=projection_width,
+                      fov_up_deg=fov_up_deg, fov_down_deg=fov_down_deg)
     ref = residual_channels(frame_xyz[0], past_list, normalize=False, clip=clip,
-                            return_validity=return_validity)
+                            return_validity=return_validity, **projection)
     if not all_frames:
         width = ref.shape[1]
         return [ref] + [np.zeros((len(frame_xyz[t]), width), np.float32)
@@ -133,5 +137,5 @@ def temporal_residual_blocks(frame_xyz, stack_offsets, offsets, *, clip=3.0,
         compare = [scans.get(o, empty) for o in canonical if o != query_off]
         blocks.append(residual_channels(
             frame_xyz[t], compare, normalize=False, clip=clip,
-            return_validity=return_validity))
+            return_validity=return_validity, **projection))
     return blocks

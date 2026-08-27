@@ -75,9 +75,19 @@ five-frame temporal window warms up during the first eight scans.
 ## Run on a real Husky
 
 Use the same command with the robot's LiDAR and lidar-localization odometry
-topics, and change `use_sim_time` to `false`. Start stationary and test at low
-speed in a controlled area. Odometry timestamps and the LiDAR pose/extrinsic
-must be correct; wheel odometry alone may not be accurate enough.
+topics, and change `use_sim_time` to `false`. For the measured 16-beam robot
+LiDAR, also add these ROS parameters:
+
+```bash
+-p intensity_scale:=255.0 \
+-p projection_height:=16 -p projection_width:=2048 \
+-p fov_down_deg:=-15.0 -p fov_up_deg:=15.0
+```
+
+Start stationary and test at low speed in a controlled area. Odometry
+timestamps and the LiDAR pose/extrinsic must be correct; wheel odometry alone
+may not be accurate enough. Jetson users should follow the complete
+[Jetson AGX Orin instructions](README_JETSON_ORIN.md).
 
 This is experimental perception output. Do not connect it directly to
 steering, braking, or emergency-stop control.

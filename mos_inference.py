@@ -39,7 +39,8 @@ def _relative(T_now: np.ndarray, T_past: np.ndarray) -> np.ndarray:
 
 class MOSInference:
     def __init__(self, config_path, ckpt_path, device="cuda",
-                 propagate=False, backend_name=None):
+                 propagate=False, backend_name=None, projection_height=None,
+                 projection_width=None, fov_up_deg=None, fov_down_deg=None):
         import yaml, torch
         if backend_name:
             os.environ["SU4D_BACKEND"] = backend_name
@@ -61,6 +62,17 @@ class MOSInference:
         self.res_clip = d.get("res_clip", 3.0)
         self.residual_validity = d.get("residual_validity", False)
         self.residual_all_frames = d.get("residual_all_frames", False)
+        self.projection_height = int(
+            projection_height if projection_height is not None
+            else d.get("projection_height", 64))
+        self.projection_width = int(
+            projection_width if projection_width is not None
+            else d.get("projection_width", 2048))
+        self.fov_up_deg = float(
+            fov_up_deg if fov_up_deg is not None else d.get("fov_up_deg", 3.0))
+        self.fov_down_deg = float(
+            fov_down_deg if fov_down_deg is not None
+            else d.get("fov_down_deg", -25.0))
         # must match training: 'residual' picks the max-|residual| point per
         # voxel via the SAME shared helper the dataset uses (bit-identical);
         # 'label' (legacy ckpts) falls back to first-occurrence at inference.
@@ -93,15 +105,26 @@ class MOSInference:
                              scan_xyz_i[:, 3:4].copy(),
                              np.asarray(T_world_sensor, np.float64)))
         del self._buf[self.max_offset + 1:]        # keep enough for max offset
-        T_ref = self._buf[0][2]
-        # strided stack: (xyz, remission, rel_to_ref, offset). Offsets not yet
-        # in the buffer (early in the stream) are simply skipped -> zero residual
-        # channel, exactly like early-in-sequence frames at training time.
+        return self.infer_history(self._buf)
+
+    def infer_history(self, history):
+        """Infer from a newest-first full-rate scan history.
+
+        ``history`` contains ``(xyz, remission, T_world)`` tuples.  The ROS
+        deployment path records every incoming scan here, independently of
+        the slower inference worker, so frame offsets retain their training
+        meaning even when queued output jobs are dropped.
+        """
+        if not history:
+            raise ValueError("history must contain at least the reference scan")
+        T_ref = history[0][2]
+        # Strided stack: (xyz, remission, rel_to_ref, offset). Offsets not yet
+        # in the history (early in the stream) are skipped, matching training.
         stack = []
         for o in [0] + self.offsets:
-            if o >= len(self._buf):
+            if o >= len(history):
                 continue
-            xyz, rem, T = self._buf[o]
+            xyz, rem, T = history[o]
             rel = np.eye(4) if o == 0 else _relative(T_ref, T)
             stack.append((xyz, rem, rel, o))
         return self._infer(stack)
@@ -146,7 +169,11 @@ class MOSInference:
             res_blocks = temporal_residual_blocks(
                 frame_xyz, stack_offsets, self.offsets, clip=self.res_clip,
                 return_validity=self.residual_validity,
-                all_frames=self.residual_all_frames)
+                all_frames=self.residual_all_frames,
+                projection_height=self.projection_height,
+                projection_width=self.projection_width,
+                fov_up_deg=self.fov_up_deg,
+                fov_down_deg=self.fov_down_deg)
             feats = np.concatenate([feats, np.concatenate(res_blocks, 0)], 1)
 
         q = coords.copy()

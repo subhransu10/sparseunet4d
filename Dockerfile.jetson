@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1.7
-
 # JetPack 6 / L4T R36, Ubuntu 22.04, Python 3.10, CUDA 12.6 and PyTorch 2.4.
 # Pin the exact arm64 image that was tested on the target AGX Orin (R36.5).
 FROM dustynv/l4t-pytorch:r36.4.0@sha256:a05c85def9139c21014546451d3baab44052d7cabe854d937f163390bfd5201b

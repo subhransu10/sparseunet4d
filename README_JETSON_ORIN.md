@@ -47,13 +47,33 @@ export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
 docker run --rm --name sparseunet4d-mos \
   --runtime nvidia --network host --ipc host \
   -e ROS_DOMAIN_ID="$ROS_DOMAIN_ID" \
+  -e SU4D_THRESHOLD=0.3 \
   ghcr.io/subhransu10/sparseunet4d:jetson-orin-jp62 \
   python3 /opt/sparseunet4d/mos_node.py --ros-args \
     -p config:=/opt/sparseunet4d/configs/pretrained_semantickitti.yaml \
     -p ckpt:=/opt/sparseunet4d/checkpoints/sparseunet4d_semantickitti/best.pt \
     -p device:=cuda -p propagate:=false -p pipeline:=true \
+    -p intensity_scale:=255.0 \
+    -p projection_height:=16 -p projection_width:=2048 \
+    -p fov_down_deg:=-15.0 -p fov_up_deg:=15.0 \
     -p use_sim_time:=false \
     -r /sparseunet4d_mos/points:="$CLOUD_TOPIC" \
     -r /sparseunet4d_mos/odom:="$ODOM_TOPIC"
 ```
 
+These sensor values match the measured robot cloud: intensity `0-123` and a
+roughly `-15` to `+15` degree 16-beam vertical field of view. The node keeps
+all incoming 10 Hz scans in its temporal history even when Jetson inference
+publishes more slowly.
+
+Check the result from another ROS-sourced terminal:
+
+```bash
+ros2 topic hz /sparseunet4d_mos/points_labeled
+ros2 topic hz /sparseunet4d_mos/points_moving
+docker logs --tail 30 sparseunet4d-mos
+```
+
+The logs report the normalized intensity, maximum moving probability, and
+maximum number of moving points every five seconds. The `points_moving` topic
+is published only when at least one moving point is present.
