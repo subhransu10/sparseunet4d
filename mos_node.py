@@ -333,7 +333,9 @@ def main():
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        # SIGINT may already have shut down the default context.
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == "__main__":
