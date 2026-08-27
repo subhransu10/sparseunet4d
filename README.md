@@ -10,7 +10,8 @@ The repository includes training and evaluation code for SemanticKITTI, a
 streaming Python API, a ROS 2 node, KITTI replay tools, and Husky/Gazebo
 deployment instructions.
 
-> This research is ready to be tested on an autonomous vehicle in an outdoor setting.
+> Research prototype: validated in simulation and on the documented Jetson
+> robot setup, but not certified for safety-critical vehicle control.
 
 ## Architecture
 
@@ -56,27 +57,32 @@ points and 302k five-frame voxels per scan):
 End to end includes CPU preprocessing, GPU inference, and voxel-to-point
 mapping. See [RESULTS.md](RESULTS.md) for experiments and limitations.
 
-## Quick start
+## Choose one setup path
 
-1. Follow [INSTALLATION.md](INSTALLATION.md) to install the verified Python,
-   PyTorch, CUDA, and MinkowskiEngine environment.
-2. Download the released checkpoint:
+Docker and the source installation are alternatives. Do not complete both for
+the same machine.
 
-   ```bash
-   bash deploy/download_model.sh
-   ```
+| Goal | Use this guide | Clone repository? | Install Python/ML packages on host? |
+|---|---|---:|---:|
+| Run the published image on an `x86_64` PC or Gazebo | [x86/Gazebo Docker](README_HUSKY_GAZEBO.md) | No | No |
+| Run on Jetson AGX Orin / JetPack 6.2 | [Jetson Docker](README_JETSON_ORIN.md) | Yes, only to build the image | No |
+| Train, evaluate, modify code, or run without Docker | [Source installation](INSTALLATION.md), then [source deployment](DEPLOYMENT.md) | Yes | Yes |
 
-3. Follow [DEPLOYMENT.md](DEPLOYMENT.md) for SemanticKITTI replay, ROS 2,
-   Gazebo, and real-robot commands.
+Both Docker images are self-contained and include ROS 2 Humble, PyTorch,
+MinkowskiEngine, the source, configuration, and released checkpoint. The
+Jetson workflow builds locally because it uses the JetPack/L4T runtime from the
+target device; the regular `latest` image is `amd64` and cannot run on Jetson.
 
-The checkpoint is installed at:
+For the source-installation path, the download script installs the checkpoint
+at:
 
 ```text
 checkpoints/sparseunet4d_semantickitti/best.pt
 ```
 
-It is distributed as a GitHub Release asset because its 141 MB size exceeds
-GitHub's normal per-file repository limit. Do not commit it directly to Git.
+Docker images already contain it. The standalone file is distributed as a
+GitHub Release asset because its 141 MB size exceeds GitHub's normal per-file
+repository limit. Do not commit it directly to Git.
 
 ## Repository layout
 
@@ -91,6 +97,7 @@ mos_node.py                 ROS 2 streaming node
 INSTALLATION.md             beginner installation guide
 DEPLOYMENT.md               running and deployment guide
 README_HUSKY_GAZEBO.md      isolated Docker deployment on Husky/Gazebo
+README_JETSON_ORIN.md       Jetson AGX Orin Docker build and robot run guide
 ```
 
 ## Training and evaluation

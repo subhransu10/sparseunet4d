@@ -1,0 +1,23 @@
+# Inference-only configuration for the released checkpoint on Jetson Orin.
+# It preserves the trained architecture, five-frame timing and 0.1 m voxels,
+# while limiting deployment to a practical 25.6 m near field.
+dataset:
+  n_frames: 5
+  frame_offsets: [1, 2, 4, 8]
+  voxel_size: 0.1
+  point_range: 25.6
+  residual_feats: true
+  res_clip: 3.0
+  residual_validity: false
+  residual_all_frames: false
+  feat_rep: aggregate
+  num_semantic: 20
+
+model:
+  use_cluster: true
+  cluster_link: 2
+  cluster_min_size: 3
+  cluster_cross_frame: false
+  cluster_feature_fusion: true
+  dual_branch: true
+  app_ch: 1

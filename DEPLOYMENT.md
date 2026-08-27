@@ -1,8 +1,13 @@
-# Running and deployment
+# Source/venv running and deployment
 
 This guide covers offline verification, SemanticKITTI replay, and the ROS 2
 streaming node. Complete [INSTALLATION.md](INSTALLATION.md) and download the
 checkpoint first.
+
+This page assumes a host-native source installation. Docker users should use
+the separate [x86/Gazebo](README_HUSKY_GAZEBO.md) or
+[Jetson](README_JETSON_ORIN.md) guide and should not repeat these installation
+steps inside or outside the container.
 
 ## Common environment
 

@@ -1,8 +1,14 @@
-# Installation
+# Source installation (without Docker)
 
 This guide starts from a fresh Ubuntu 22.04 machine with an NVIDIA GPU. It keeps
 all Python packages in `~/mos_venv`; it does not replace the system Python or
 ROS installation.
+
+Use this guide only for training, evaluation, development, or a host-native
+run. If you only want to run the model in Docker, stop here and use either the
+[x86/Gazebo image](README_HUSKY_GAZEBO.md) or the
+[Jetson image](README_JETSON_ORIN.md). Docker users do not create `mos_venv`,
+compile MinkowskiEngine on the host, or download `best.pt` separately.
 
 ## 1. Prerequisites
 

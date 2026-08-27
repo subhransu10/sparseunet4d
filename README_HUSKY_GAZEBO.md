@@ -1,11 +1,13 @@
-# SparseUNet4D on Husky and Gazebo
+# x86_64 Docker: Husky and Gazebo
 
-The published image is self-contained: it includes ROS 2 Humble, PyTorch
-`1.12.1+cu113`, MinkowskiEngine `0.5.4`, the SparseUNet4D source and configs,
-and the released `best.pt`. You do not need to copy the repository, model, or
-Python environment separately.
+Use this guide for an NVIDIA `x86_64` PC. The published image is self-contained:
+do not clone the repository, follow `INSTALLATION.md`, create a virtual
+environment, compile MinkowskiEngine, or download `best.pt` separately.
 
-## Check the PC
+Jetson Orin is `aarch64` and cannot run this image. Use the separate
+[Jetson AGX Orin guide](README_JETSON_ORIN.md).
+
+## 1. Check the PC
 
 ```bash
 uname -m
@@ -13,48 +15,39 @@ nvidia-smi
 docker --version
 ```
 
-Continue if `uname -m` prints `x86_64`, `nvidia-smi` sees the GPU, and Docker
-is installed. The PC also needs NVIDIA Container Toolkit and about 15 GB of
-free Docker storage. The image is tested with compute-capability 8.6 GPUs such
-as the RTX 3050 Ti and RTX 3090.
+Continue when `uname -m` reports `x86_64`, the GPU appears in `nvidia-smi`,
+Docker is installed, and NVIDIA Container Toolkit is configured.
 
-> Jetson Orin is `arm64`, so it cannot run this `amd64` image. Follow the
-> separate [Jetson AGX Orin instructions](README_JETSON_ORIN.md).
-
-## Pull
+## 2. Pull and verify
 
 ```bash
 docker pull ghcr.io/subhransu10/sparseunet4d:latest
-```
 
-Verify that Docker can use the GPU:
-
-```bash
 docker run --rm --gpus all \
   ghcr.io/subhransu10/sparseunet4d:latest \
   python3 -c 'import torch, MinkowskiEngine as ME; print(torch.__version__, torch.version.cuda, ME.__version__); print(torch.cuda.get_device_name())'
 ```
 
-Expected versions are `1.12.1+cu113`, CUDA `11.3`, and MinkowskiEngine `0.5.4`.
+Expected versions are PyTorch `1.12.1+cu113`, CUDA `11.3`, and
+MinkowskiEngine `0.5.4`.
 
-## Run with Gazebo
+## 3. Run with Gazebo
 
-Start Husky Gazebo on the host. Find its point-cloud and odometry topics:
+Start Gazebo on the host and identify the point-cloud and odometry topics:
 
 ```bash
 ros2 topic list | grep -Ei 'point|cloud|lidar|velodyne|odom'
-ros2 topic type /velodyne_points
-ros2 topic type /odom
 ```
 
-The inputs must be `sensor_msgs/msg/PointCloud2` and
-`nav_msgs/msg/Odometry`. Then run the image, replacing the two example topic
-names if necessary:
+The topics must use `sensor_msgs/msg/PointCloud2` and `nav_msgs/msg/Odometry`.
+Set the three values below to match the simulator, then run the container:
 
 ```bash
 export CLOUD_TOPIC=/velodyne_points
 export ODOM_TOPIC=/odom
-export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+export ROS_DOMAIN_ID=0
+
+docker stop sparseunet4d-mos 2>/dev/null || true
 
 docker run --rm --name sparseunet4d-mos \
   --gpus all --network host --ipc host \
@@ -69,45 +62,21 @@ docker run --rm --name sparseunet4d-mos \
     -r /sparseunet4d_mos/odom:="$ODOM_TOPIC"
 ```
 
-The container uses host networking to join the host's ROS 2 DDS domain. The
-five-frame temporal window warms up during the first eight scans.
+Host networking lets the container join the host ROS 2 DDS domain. The first
+eight scans warm up the temporal window.
 
-## Run on a real Husky
+## 4. Check output
 
-Use the same command with the robot's LiDAR and lidar-localization odometry
-topics, and change `use_sim_time` to `false`. For the measured 16-beam robot
-LiDAR, also add these ROS parameters:
+In another ROS-sourced host terminal:
 
 ```bash
--p intensity_scale:=255.0 \
--p projection_height:=16 -p projection_width:=2048 \
--p fov_down_deg:=-15.0 -p fov_up_deg:=15.0
-```
-
-Start stationary and test at low speed in a controlled area. Odometry
-timestamps and the LiDAR pose/extrinsic must be correct; wheel odometry alone
-may not be accurate enough. Jetson users should follow the complete
-[Jetson AGX Orin instructions](README_JETSON_ORIN.md).
-
-This is experimental perception output. Do not connect it directly to
-steering, braking, or emergency-stop control.
-
-## Check output
-
-On the host:
-
-```bash
-ros2 node list
+ros2 topic hz /sparseunet4d_mos/points_labeled
 ros2 topic hz /sparseunet4d_mos/points_moving
-ros2 topic info /sparseunet4d_mos/points_labeled
 ```
 
-The node publishes:
+The labeled topic contains the input points plus `moving` and `moving_prob`.
+The moving-only topic is published only when at least one moving point exists.
 
-- `/sparseunet4d_mos/points_labeled`: the input cloud with `moving` and
-  `moving_prob` fields;
-- `/sparseunet4d_mos/points_moving`: moving points only.
-
-If ROS topics are not visible, confirm `--network host` and matching
-`ROS_DOMAIN_ID` values. If the GPU is not visible, fix NVIDIA Container
-Toolkit on the host before debugging the model.
+If topics are invisible, confirm `--network host` and matching
+`ROS_DOMAIN_ID` values. If the GPU is invisible, fix NVIDIA Container Toolkit
+before debugging SparseUNet4D.
