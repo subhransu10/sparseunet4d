@@ -67,6 +67,7 @@ the same machine.
 | Run the published image on an `x86_64` PC or Gazebo | [x86/Gazebo Docker](README_HUSKY_GAZEBO.md) | No | No |
 | Run on Jetson AGX Orin / JetPack 6.2 | [Jetson Docker](README_JETSON_ORIN.md) | Yes, only to build the image | No |
 | Train, evaluate, modify code, or run without Docker | [Source installation](INSTALLATION.md), then [source deployment](DEPLOYMENT.md) | Yes | Yes |
+| Record paper-ready Husky trials | [Robot evaluation](ROBOT_EVALUATION.md) | No additional install | Yes |
 
 Both Docker images are self-contained and include ROS 2 Humble, PyTorch,
 MinkowskiEngine, the source, configuration, and released checkpoint. The
@@ -96,6 +97,7 @@ mos_inference.py            ROS-independent streaming inference API
 mos_node.py                 ROS 2 streaming node
 INSTALLATION.md             beginner installation guide
 DEPLOYMENT.md               running and deployment guide
+ROBOT_EVALUATION.md         one-command Husky experiment recorder
 README_HUSKY_GAZEBO.md      isolated Docker deployment on Husky/Gazebo
 README_JETSON_ORIN.md       Jetson AGX Orin Docker build and robot run guide
 ```

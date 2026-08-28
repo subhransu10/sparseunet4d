@@ -80,6 +80,9 @@ class MOSInference:
         self.device = device
         self.propagate = propagate
         self._backend = backend()
+        # Updated after every inference call.  The ROS deployment node exposes
+        # this as a lightweight diagnostics topic for robot experiments.
+        self.last_active_4d_voxels = 0
 
         k = (self.n_frames - 1) * (2 if self.residual_validity else 1)
         in_ch = 1 + k if self.residual_feats else 1
@@ -213,6 +216,7 @@ class MOSInference:
     def _infer(self, stack):
         import torch
         qc, ft, keep_ref, n_ref, xyz_ref = self._assemble(stack)
+        self.last_active_4d_voxels = int(len(qc))
         bcol = np.zeros((len(qc), 1), np.int32)
         coords = torch.from_numpy(np.concatenate([bcol, qc], 1)).int()
         feats = torch.from_numpy(ft).float()

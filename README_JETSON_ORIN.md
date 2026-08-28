@@ -164,6 +164,15 @@ moving-only cloud from the same inference timestamp:
 rviz2 -d sparseunet4d_moving_red.rviz
 ```
 
+When inference runs on a separate GPU PC over Ethernet, use the preset matching
+the tested Husky display (Reliable/Volatile QoS, `lidar3d_0_link`, and a white
+moving-points overlay):
+
+```bash
+export ROS_DOMAIN_ID=30
+rviz2 -d deploy/husky_remote_pc.rviz
+```
+
 Set RViz Fixed Frame to `odom` or the fixed frame used by the robot's TF tree.
 Do not overlay delayed labels on the live 10 Hz cloud when evaluating spatial
 accuracy: the approximately 240 ms inference latency makes those timestamps
@@ -181,4 +190,3 @@ different.
 - No ROS topics: verify `ROS_DOMAIN_ID=30` on both host and container and keep
   `--network host`.
 - No GPU: repair NVIDIA Container Runtime before debugging the model.
-

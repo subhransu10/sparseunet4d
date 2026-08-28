@@ -10,6 +10,7 @@ Publishes:
                       moving_prob (float32)
   ~/points_moving   PointCloud2  moving points only (convenience, e.g. for
                                  dynamic-obstacle costmap layers)
+  ~/metrics         String       one compact JSON record per processed scan
 
 Pose source:
   odom topic if present, else embedded KISS-ICP (pip install kiss-icp).
@@ -46,7 +47,7 @@ sensor, or fine-tune on a little labelled robot data. The pipeline is correct
 regardless; accuracy transfer is the open question.
 """
 from __future__ import annotations
-import os, sys, threading, time
+import json, os, sys, threading, time
 import numpy as np
 
 import rclpy
@@ -54,6 +55,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from sensor_msgs.msg import PointCloud2, PointField
 from nav_msgs.msg import Odometry
+from std_msgs.msg import String
 import sensor_msgs_py.point_cloud2 as pc2
 
 sys.path.insert(0, os.path.expanduser("~/sparseunet4d"))
@@ -87,10 +89,14 @@ class MOSNode(Node):
         self.declare_parameter("projection_width", 2048)
         self.declare_parameter("fov_up_deg", 3.0)
         self.declare_parameter("fov_down_deg", -25.0)
+        self.declare_parameter("pose_mode", "interpolated")
         cfg = self.get_parameter("config").value
         ckpt = self.get_parameter("ckpt").value
         assert cfg and ckpt, "config and ckpt parameters are required"
         self.pipeline = self.get_parameter("pipeline").value
+        self.pose_mode = str(self.get_parameter("pose_mode").value)
+        if self.pose_mode not in ("interpolated", "latest"):
+            raise ValueError("pose_mode must be 'interpolated' or 'latest'")
         self.intensity_scale = float(
             self.get_parameter("intensity_scale").value)
         if not np.isfinite(self.intensity_scale) or self.intensity_scale <= 0:
@@ -129,6 +135,7 @@ class MOSNode(Node):
             Odometry, "~/odom", self.on_odom, qos)
         self.pub_all = self.create_publisher(PointCloud2, "~/points_labeled", 1)
         self.pub_mov = self.create_publisher(PointCloud2, "~/points_moving", 1)
+        self.pub_metrics = self.create_publisher(String, "~/metrics", 10)
 
         self._odom = None                 # latest (stamp_ns, T 4x4)
         self._odom_buf = []               # [(stamp_ns, pos3, quat4)] time-sync
@@ -144,6 +151,7 @@ class MOSNode(Node):
         self._logged_input = False
         if self.pipeline:
             threading.Thread(target=self._worker, daemon=True).start()
+        self.get_logger().info(f"pose mode: {self.pose_mode}")
         self.get_logger().info("ready.")
 
     # ---------------- callbacks ------------------------------------------
@@ -236,8 +244,12 @@ class MOSNode(Node):
             self.icp.register_frame(xyz, np.zeros(len(xyz)))
             T = np.asarray(self.icp.last_pose)
         elif self._odom_buf:
-            stamp = msg.header.stamp.sec * 10**9 + msg.header.stamp.nanosec
-            T = self._pose_at(stamp)      # pose interpolated to THIS scan's time
+            if self.pose_mode == "latest":
+                # Ablation only: intentionally ignore the scan timestamp.
+                T = self._odom[1].copy()
+            else:
+                stamp = msg.header.stamp.sec * 10**9 + msg.header.stamp.nanosec
+                T = self._pose_at(stamp)  # pose interpolated to THIS scan's time
         else:
             return None
         if self._prev_T is not None:
@@ -264,9 +276,23 @@ class MOSNode(Node):
         t0 = time.time()
         labels, probs = self.mos.infer_history(history)
         self._publish(msg, scan, labels, probs)
-        self._lat.append(time.time() - t0)
+        latency_s = time.time() - t0
+        moving_count = int(np.count_nonzero(labels == 1))
+        metric = String()
+        metric.data = json.dumps({
+            "stamp_ns": int(msg.header.stamp.sec * 10**9
+                            + msg.header.stamp.nanosec),
+            "latency_ms": latency_s * 1e3,
+            "input_points": int(len(scan)),
+            "in_range_points": int(np.count_nonzero(labels != -1)),
+            "active_4d_voxels": int(self.mos.last_active_4d_voxels),
+            "moving_points": moving_count,
+            "pose_mode": self.pose_mode,
+        }, separators=(",", ":"))
+        self.pub_metrics.publish(metric)
+        self._lat.append(latency_s)
         self._prob_max.append(float(probs.max()) if len(probs) else 0.0)
-        self._moving_count.append(int(np.count_nonzero(labels == 1)))
+        self._moving_count.append(moving_count)
         if time.time() - self._t_last_log > 5.0:
             l = np.array(self._lat) * 1e3
             self.get_logger().info(

@@ -90,6 +90,16 @@ The preset overlays the full labeled cloud in grey and the moving-only topic in
 red. Set RViz's Fixed Frame to the fixed frame used by odometry if the preset's
 default does not match your system.
 
+For inference on a separate GPU PC connected to the real Husky, use:
+
+```bash
+export ROS_DOMAIN_ID=30
+rviz2 -d deploy/husky_remote_pc.rviz
+```
+
+This preset uses `lidar3d_0_link`, Reliable/Volatile QoS, and overlays
+`/sparseunet4d_mos/points_moving` in white on the full labeled cloud.
+
 ## Gazebo and Husky
 
 1. Start the existing Husky/Gazebo stack on the host.
