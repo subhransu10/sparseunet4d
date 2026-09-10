@@ -1,6 +1,6 @@
 dataset:
-  root: /media/suba/Expansion/4D_Sparse_Conv_Ntwrk/my_kitti_dataset/dataset
-  semantic_yaml: /media/suba/Expansion/4D_Sparse_Conv_Ntwrk/my_kitti_dataset/dataset/semantic-kitti.yaml
+  root: /media/suba/Expansion/4D_Sparse_Conv_Ntwrk/my_kitti_dataset/dataset/sequences
+  semantic_yaml: /media/suba/Expansion/4D_Sparse_Conv_Ntwrk/my_kitti_dataset/semantic-kitti-api/config/semantic-kitti.yaml
   train_sequences:
   - 0
   - 1
